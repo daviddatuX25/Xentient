@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xentient | Interactive Architecture Visualizer</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+    :root {
+      --bg: #07080f;
+      --bg-panel: rgba(18, 20, 29, 0.7);
+      --border: rgba(42, 45, 62, 0.8);
+      --border-glow: rgba(109, 92, 255, 0.3);
+      --text: #e2e4f0;
+      --text-muted: #8b90a5;
+      --accent: #6d5cff;
+      --accent-light: #8b7bff;
+      --secondary: #22d3ee;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+      display: flex;
+    }
+
+    /* Fixed Sidebar Navigation */
+    nav.sidebar {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      width: 260px;
+      padding: 40px 20px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      transition: transform 0.3s ease;
+    }
+
+    .logo {
+      font-weight: 700;
+      font-size: 1.5rem;
+      margin-bottom: 60px;
+      letter-spacing: -0.5px;
+    }
+    .logo span { color: var(--accent); }
+
+    .nav-links {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      padding: 10px 16px;
+      border-radius: 8px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid transparent;
+    }
+    .nav-links a:hover, .nav-links a.active {
+      color: var(--text);
+      background: rgba(109, 92, 255, 0.1);
+      border-color: var(--border-glow);
+    }
+    .nav-links a.active {
+      color: var(--accent-light);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    main {
+      flex: 1;
+      margin-left: 260px;
+      height: 100vh;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+
+    section {
+      min-height: 100vh;
+      padding: 80px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+
+    h2 { font-size: 2.5rem; font-weight: 600; margin-bottom: 16px; letter-spacing: -0.5px; }
+    p.subtitle { color: var(--text-muted); font-size: 1.1rem; max-width: 600px; margin-bottom: 40px; }
+
+    /* Glass Panels */
+    .glass-panel {
+      background: rgba(18, 20, 29, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--glass-shadow);
+      padding: 32px;
+    }
+
+    /* --- SECTION 1: SPACES HERO --- */
+    .space-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 40px;
+    }
+    .space-card {
+      position: relative;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.4s var(--spring);
+      overflow: hidden;
+    }
+    .space-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(180deg, transparent, rgba(109, 92, 255, 0.05));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .space-card:hover {
+      transform: translateY(-8px);
+      border-color: var(--accent);
+      box-shadow: 0 12px 40px rgba(109, 92, 255, 0.15);
+    }
+    .space-card:hover::before { opacity: 1; }
+    .icon-large { font-size: 3rem; margin-bottom: 20px; display: inline-block; }
+    .space-card h3 { font-size: 1.5rem; margin-bottom: 12px; }
+    .space-card p { color: var(--text-muted); font-size: 0.9rem; }
+
+    /* Space Map Visualization */
+    #space-map-container {
+      display: none;
+      height: 60vh;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      margin-top: 40px;
+      position: relative;
+      background: radial-gradient(circle at center, #1a1d2b 0%, var(--bg) 100%);
+      overflow: hidden;
+    }
+    .map-grid {
+      position: absolute; width: 100%; height: 100%;
+      background-image: 
+        linear-gradient(rgba(42, 45, 62, 0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(42, 45, 62, 0.3) 1px, transparent 1px);
+      background-size: 40px 40px;
+      transform: perspective(1000px) rotateX(60deg) scale(1.5);
+      transform-origin: top;
+    }
+    .placed-node {
+      position: absolute;
+      background: var(--bg-panel);
+      border: 2px solid var(--accent);
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 0 20px rgba(109, 92, 255, 0.4);
+      animation: pulse 3s infinite;
+      z-index: 10;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(109, 92, 255, 0.4); }
+      70% { box-shadow: 0 0 0 15px rgba(109, 92, 255, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(109, 92, 255, 0); }
+    }
+    
+    .space-use-cases {
+      position: absolute;
+      bottom: 20px; right: 20px;
+      width: 320px;
+      background: rgba(18, 20, 29, 0.85);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 20px;
+      color: var(--text);
+      backdrop-filter: blur(10px);
+      z-index: 20;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      animation: slideIn 0.4s var(--spring) forwards;
+    }
+    .use-case-item {
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+      border-left: 2px solid var(--secondary);
+      padding-left: 10px;
+      line-height: 1.4;
+    }
+    .use-case-item:last-child { margin-bottom: 0; }
+    .uc-icon { margin-right: 6px; }
+
+    @keyframes slideIn {
+      from { transform: translateX(20px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* --- SECTION 2: NODE BUILDER --- */
+    .builder-container {
+      display: flex;
+      gap: 40px;
+      align-items: center;
+      margin-top: 40px;
+      height: 500px;
+    }
+    
+    .peripheral-tray {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    .peripheral-chip {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+      border-radius: 12px;
+      cursor: grab;
+      display: flex; align-items: center; gap: 16px;
+      transition: all 0.2s;
+    }
+    .peripheral-chip:hover { border-color: var(--secondary); background: rgba(34, 211, 238, 0.1); }
+    .chip-icon { font-size: 1.5rem; }
+    .chip-name { font-weight: 500; }
+    .chip-type { font-family: var(--mono); font-size: 0.75rem; color: var(--text-muted); }
+
+    .node-assembly {
+      flex: 2;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+    
+    .node-base-3d {
+      width: 240px;
+      height: 240px;
+      background: #111;
+      border-radius: 20px;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: perspective(800px) rotateX(10deg) rotateY(-10deg);
+      box-shadow: 
+        -10px 10px 30px rgba(0,0,0,0.8),
+        inset 0 0 0 1px #333,
+        inset 0 2px 0 rgba(255,255,255,0.1);
+      transition: transform 0.5s ease;
+    }
+
+    .node-slot {
+      position: absolute;
+      background: rgba(0,0,0,0.5);
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      font-size: 0.8rem; font-family: var(--mono);
+      transition: all 0.3s;
+    }
+    .node-slot.highlight { border-color: var(--accent); background: rgba(109, 92, 255, 0.1); }
+    .node-slot.filled { border: 1px solid var(--accent); background: var(--bg-panel); cursor: pointer; }
+    
+    .power-meter {
+      position: absolute;
+      top: 20px; 
+      right: 20px;
+      background: rgba(109, 92, 255, 0.15);
+      border: 1px solid var(--accent);
+      padding: 8px 16px;
+      border-radius: 12px;
+      color: var(--accent-light);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.3s;
+      z-index: 20;
+    }
+    
+    /* Pre-positioned slots for V1 */
+    #slot-listen { top: 20px; left: 50%; transform: translateX(-50%); width: 140px; height: 40px; }
+    #slot-speak { bottom: 20px; left: 50%; transform: translateX(-50%); width: 140px; height: 40px; }
+    #slot-sight { top: 50%; left: 20px; transform: translateY(-50%); width: 40px; height: 100px; writing-mode: vertical-rl; }
+    #slot-sense { top: 50%; right: 20px; transform: translateY(-50%); width: 40px; height: 100px; writing-mode: vertical-rl; }
+
+    .node-status {
+      position: absolute;
+      bottom: -60px;
+      left: 50%; transform: translateX(-50%);
+      background: rgba(109, 92, 255, 0.15);
+      border: 1px solid var(--accent);
+      padding: 8px 16px;
+      border-radius: 20px;
+      color: var(--accent-light);
+      font-weight: 500; font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    /* --- SECTION 3: LIVE INTERACTION --- */
+    .sim-arena {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 60px;
+      position: relative;
+    }
+    
+    .sim-node {
+      text-align: center;
+      z-index: 2;
+    }
+    .sim-icon {
+      width: 80px; height: 80px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem;
+      margin: 0 auto 10px;
+      position: relative;
+    }
+    
+    .sim-cloud {
+      background: var(--bg-panel);
+      border: 1px solid var(--accent);
+      border-radius: 20px;
+      padding: 30px;
+      width: 400px;
+      z-index: 2;
+      box-shadow: 0 0 40px rgba(109, 92, 255, 0.1);
+    }
+    
+    .pipeline-step {
+      display: flex; align-items: flex-start; gap: 16px;
+      margin-bottom: 20px;
+      opacity: 0.3;
+      transition: opacity 0.3s;
+    }
+    .pipeline-step.active { opacity: 1; }
+    .pipe-icon { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-hover); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); margin-top:2px; }
+    
+    .pipe-details { display: flex; flex-direction: column; text-align: left; }
+    .pipe-title { display: block; font-size: 0.95rem; }
+    .pipe-data { font-family: var(--mono); font-size: 0.75rem; color: var(--success); max-height: 0; overflow: hidden; opacity: 0; transition: all 0.4s var(--spring); margin-top: 4px; border-left: 2px solid var(--success); padding-left: 10px; background: rgba(34, 197, 94, 0.05); border-radius: 0 4px 4px 0; }
+    .pipeline-step.active .pipe-data { max-height: 100px; opacity: 1; padding-top: 6px; padding-bottom: 6px; }
+
+    .sim-context-bubble {
+      opacity: 0; position: absolute; bottom: 120%; width: 260px; text-align: left;
+      background: var(--bg-panel); padding: 12px 16px; border-radius: 12px;
+      border: 1px solid var(--secondary); left: 50%; transform: translateX(-50%) translateY(10px);
+      font-size: 0.85rem; color: var(--text); box-shadow: 0 10px 30px rgba(34, 211, 238, 0.2);
+      transition: all 0.4s var(--spring); z-index: 10; pointer-events: none;
+      backdrop-filter: blur(10px);
+    }
+    .sim-context-bubble.active { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .sim-context-bubble.response { border-color: var(--success); box-shadow: 0 10px 30px rgba(34, 197, 94, 0.2); }
+    
+    .data-flow-line {
+      position: absolute;
+      top: 50px; left: 100px; right: 100px;
+      height: 2px;
+      background: var(--border);
+      z-index: 1;
+    }
+    .flow-packet {
+      position: absolute;
+      top: -4px; left: 0;
+      width: 10px; height: 10px;
+      background: var(--secondary);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--secondary);
+      opacity: 0;
+    }
+
+    .play-sim-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-family: var(--sans); font-weight: 500; font-size: 1rem;
+      cursor: pointer;
+      margin-top: 40px;
+      transition: background 0.2s;
+      align-self: flex-start;
+    }
+    .play-sim-btn:hover { background: var(--accent-light); }
+
+    /* --- SECTION 4: ARCHITECTURE STACK --- */
+    .arch-container {
+      height: 600px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 60px;
+      perspective: 1200px;
+      position: relative;
+    }
+    .layer-stack {
+      position: relative;
+      width: 400px;
+      height: 320px;
+      transform-style: preserve-3d;
+      transform: rotateX(60deg) rotateZ(-30deg);
+      transition: transform 0.5s ease;
+      margin-left: 50px;
+    }
+    .layer-stack:hover { transform: rotateX(50deg) rotateZ(-20deg); }
+    
+    .arch-layer {
+      position: absolute;
+      width: 100%;
+      height: 160px;
+      background: rgba(18, 20, 29, 0.8);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 20px;
+      transition: all 0.4s var(--spring);
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      box-shadow: inset 0 0 20px rgba(109, 92, 255, 0.1), 0 20px 40px rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .arch-layer:nth-child(1) { transform: translateZ(210px); background: rgba(34, 211, 238, 0.1); border-color: var(--secondary); }
+    .arch-layer:nth-child(2) { transform: translateZ(140px); }
+    .arch-layer:nth-child(3) { transform: translateZ(70px); }
+    .arch-layer:nth-child(4) { transform: translateZ(0px); background: rgba(34, 197, 94, 0.1); border-color: var(--success); }
+    
+    .arch-layer:hover, .arch-layer.selected-layer { transform: translateZ(calc(var(--z-offset, 0) + 30px)); box-shadow: inset 0 0 30px rgba(109, 92, 255, 0.4), 0 20px 40px rgba(0,0,0,0.6); }
+    
+    .layer-title { font-weight: 600; font-size: 1.5rem; text-align: center; }
+    
+    .arch-reading-pane {
+      flex: 1;
+      background: var(--bg-panel);
+      padding: 40px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      min-height: 250px;
+      box-shadow: 0 0 40px rgba(109, 92, 255, 0.05);
+    }
+    .arch-pane-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 16px; color: var(--accent-light); }
+    .arch-pane-desc { font-size: 1.1rem; color: var(--text); line-height: 1.6; }
+
+    .arch-controls {
+      position: absolute;
+      right: 40px; top: 120px;
+      display: flex; flex-direction: column; gap: 12px;
+      z-index: 10;
+    }
+    .toggle-btn {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      color: var(--text); padding: 10px 20px; border-radius: 8px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .toggle-btn.active { border-color: var(--accent); background: rgba(109, 92, 255, 0.15); }
+
+    /* --- SECTION 5: NODE STATES --- */
+    .state-nodes {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 60px;
+      position: relative;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .state-nodes::before {
+      content: '';
+      position: absolute;
+      top: 50%; left: 0; right: 0;
+      height: 2px;
+      background: var(--border);
+      z-index: 1;
+      transform: translateY(-50%);
+    }
+    .state-dot {
+      background: var(--bg-panel);
+      border: 2px solid var(--border);
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center;
+      z-index: 2;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+    .state-dot.active { border-color: var(--accent); box-shadow: 0 0 20px rgba(109, 92, 255, 0.2); }
+    .state-dot.degraded { border-color: var(--warning); box-shadow: 0 0 20px rgba(245, 158, 11, 0.2); }
+    .state-dot span { font-weight: 600; font-size: 0.9rem; margin-top: 8px; }
+    
+    .state-info {
+      background: var(--bg-panel);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 30px;
+      margin-top: 40px;
+      min-height: 120px;
+    }
+    .state-info h3 { margin-bottom: 8px; color: var(--accent-light); }
+    .state-info p { color: var(--text); }
+
+    /* Tags & Utilities */
+    .mono { font-family: var(--mono); }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="sidebar">
+    <div class="logo">Xentient<span>.</span></div>
+    <div class="nav-links">
+      <a href="#spaces" class="nav-item active">01. Spaces Context</a>
+      <a href="#modular" class="nav-item">02. Modular Builder</a>
+      <a href="#interaction" class="nav-item">03. Realtime Flow</a>
+      <a href="#architecture" class="nav-item">04. Layered Arch</a>
+      <a href="#states" class="nav-item">05. Node Lifecycle</a>
+    </div>
+    
+    <div style="margin-top:auto">
+      <p style="font-size:0.75rem; color:var(--text-muted); opacity:0.6">Xentient Overview V2</p>
+    </div>
+  </nav>
+
+  <main id="scroll-container">
+    
+    <!-- Section 1: Hero / Spaces -->
+    <section id="spaces">
+      <h2>Step 1: Pick a Space</h2>
+      <p class="subtitle">A Node is just hardware. A Space is the context. Select an environment to see how Xentient adapts to different physical realities.</p>
+      
+      <div class="space-cards" id="space-picker">
+        <div class="space-card" onclick="selectSpace('home')">
+          <span class="icon-large">🏠</span>
+          <h3>Home</h3>
+          <p>Multi-node coverage. Identity-aware responses. Persistent memory.</p>
+        </div>
+        <div class="space-card" onclick="selectSpace('office')">
+          <span class="icon-large">🏢</span>
+          <h3>Office</h3>
+          <p>Visitor greeting via Sentinel. Meeting summaries. Strict stream privacy.</p>
+        </div>
+        <div class="space-card" onclick="selectSpace('travel')">
+          <span class="icon-large">🎒</span>
+          <h3>Travel Kit</h3>
+          <p>Portable UPS mode. Single Hybrid Node. Offline LLM fallback.</p>
+        </div>
+      </div>
+
+      <div id="space-map-container">
+        <div class="map-grid"></div>
+        <div id="space-map-content"></div>
+      </div>
+    </section>
+
+    <!-- Section 2: Modular Builder -->
+    <section id="modular">
+      <h2>Assemble Your Node</h2>
+      <p class="subtitle">Drag peripheral units onto the Node Base to configure its physical capabilities. The Harness dynamically assigns logic based on what's detected via I2C.</p>
+      
+      <div class="builder-container">
+        <div class="peripheral-tray" id="tray">
+          <div class="peripheral-chip" draggable="true" ondragstart="drag(event)" id="chip-mic" data-type="listen">
+            <span class="chip-icon">🎤</span>
+            <div>
+              <div class="chip-name">Microphone Unit</div>
+              <div class="chip-type">I2S · INMP441</div>
+            </div>
+          </div>
+          <div class="peripheral-chip" draggable="true" ondragstart="drag(event)" id="chip-speaker" data-type="speak">
+            <span class="chip-icon">🔊</span>
+            <div>
+              <div class="chip-name">Speaker Unit</div>
+              <div class="chip-type">I2S · MAX98357A</div>
+            </div>
+          </div>
+          <div class="peripheral-chip" draggable="true" ondragstart="drag(event)" id="chip-cam" data-type="sight">
+            <span class="chip-icon">📷</span>
+            <div>
+              <div class="chip-name">Camera Unit</div>
+              <div class="chip-type">SPI · OV2640</div>
+            </div>
+          </div>
+          <div class="peripheral-chip" draggable="true" ondragstart="drag(event)" id="chip-pir" data-type="sense">
+            <span class="chip-icon">🚨</span>
+            <div>
+              <div class="chip-name">Sentinel Unit</div>
+              <div class="chip-type">I2C · PIR + Env</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="node-assembly">
+          <div class="power-meter" id="power-meter">⚡ 0.1W (Base)</div>
+          <div class="node-base-3d" id="node-base">
+            <div class="node-slot" id="slot-listen" ondrop="drop(event)" ondragover="allowDrop(event)" onclick="removeChip(this, 'listen', 'chip-mic', 'Listen Slot')">Listen Slot</div>
+            <div class="node-slot" id="slot-speak" ondrop="drop(event)" ondragover="allowDrop(event)" onclick="removeChip(this, 'speak', 'chip-speaker', 'Speak Slot')">Speak Slot</div>
+            <div class="node-slot" id="slot-sight" ondrop="drop(event)" ondragover="allowDrop(event)" onclick="removeChip(this, 'sight', 'chip-cam', 'Sight Slot')">Sight Slot</div>
+            <div class="node-slot" id="slot-sense" ondrop="drop(event)" ondragover="allowDrop(event)" onclick="removeChip(this, 'sense', 'chip-pir', 'Sense Slot')">Sense Slot</div>
+          </div>
+          <div class="node-status" id="node-role-label">BARE NODE</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Live Interaction --->
+    <section id="interaction">
+      <h2>Data Flow in Motion</h2>
+      <p class="subtitle">What happens when someone speaks? Xentient mediates between raw sensing and intelligent response in milliseconds.</p>
+      
+      <button class="play-sim-btn" onclick="runSim()">Trigger Audio Event</button>
+
+      <div class="sim-arena">
+        <div class="data-flow-line" id="flow-path">
+          <div class="flow-packet" id="packet"></div>
+        </div>
+
+        <div class="sim-node" style="position: relative;">
+          <div class="sim-context-bubble" id="sim-context">
+            <i style="color:var(--text-muted)">*(claps twice, asks whether there are assignments left to do in our activity given today at school)*</i>
+          </div>
+          <div class="sim-icon" id="sim-mic">🎤</div>
+          <p class="mono" style="font-size:0.8rem;color:var(--text-muted)">Ear Node<br>[Push Mode]</p>
+        </div>
+
+        <div class="sim-cloud">
+          <h3 style="margin-bottom:20px; font-size:1.1rem">Harness Pipeline</h3>
+          <div class="pipeline-step" id="pipe-stt">
+            <span class="pipe-icon">STT</span> 
+            <div class="pipe-details">
+              <span class="pipe-title">Transcribe audio chunk</span>
+              <div class="pipe-data">"Are there assignments left to do in our activity given today at school?"</div>
+            </div>
+          </div>
+          <div class="pipeline-step" id="pipe-id">
+            <span class="pipe-icon">ID</span> 
+            <div class="pipe-details">
+              <span class="pipe-title mono" style="color:var(--secondary)">identity.gate [VoicePrint]</span>
+              <div class="pipe-data">Matched: User Alex (Student)</div>
+            </div>
+          </div>
+          <div class="pipeline-step" id="pipe-mem">
+            <span class="pipe-icon">MEM</span> 
+            <div class="pipe-details">
+              <span class="pipe-title">Inject context: "Home" + "User A"</span>
+              <div class="pipe-data">Loaded: 1 pending math assignment</div>
+            </div>
+          </div>
+          <div class="pipeline-step" id="pipe-llm">
+            <span class="pipe-icon">LLM</span> 
+            <div class="pipe-details">
+              <span class="pipe-title">Generate response</span>
+              <div class="pipe-data">"You have one Math assignment left for today."</div>
+            </div>
+          </div>
+          <div class="pipeline-step" id="pipe-tts">
+            <span class="pipe-icon">TTS</span> 
+            <div class="pipe-details">
+              <span class="pipe-title">Synthesize audio output</span>
+              <div class="pipe-data">Rendered 2.3s audio stream.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sim-node" style="position: relative;">
+          <div class="sim-context-bubble response" id="sim-response">
+            <i style="color:var(--success)">"You have one Math assignment left for today."</i>
+          </div>
+          <div class="sim-icon" id="sim-speak">🔊</div>
+          <p class="mono" style="font-size:0.8rem;color:var(--text-muted)">Voice Node<br>[Assigned Speaker]</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Arch Stack --->
+    <section id="architecture">
+      <h2>The Independence Stack</h2>
+      <p class="subtitle">Xentient is designed so the Cloud remains a trust anchor, not a data trap. Toggle modes to see the responsibility shift.</p>
+      
+      <div class="arch-controls">
+        <button class="toggle-btn active" onclick="setArchMode('managed')">Managed Cloud</button>
+        <button class="toggle-btn" onclick="setArchMode('hybrid')">Self-Hosted Harness</button>
+        <button class="toggle-btn" onclick="setArchMode('local')">100% Offline Local</button>
+      </div>
+
+      <div class="arch-container">
+        <div class="layer-stack">
+          <div class="arch-layer" style="--z-offset: 210px" onclick="selectArchLayer(4, this)">
+            <div class="layer-title" style="transform: translateZ(20px);">Layer 4</div>
+          </div>
+          <div class="arch-layer" style="--z-offset: 140px" onclick="selectArchLayer(3, this)">
+            <div class="layer-title" style="transform: translateZ(20px);">Layer 3</div>
+          </div>
+          <div class="arch-layer" style="--z-offset: 70px" onclick="selectArchLayer(2, this)">
+            <div class="layer-title" style="transform: translateZ(20px);">Layer 2</div>
+          </div>
+          <div class="arch-layer" style="--z-offset: 0px" onclick="selectArchLayer(1, this)">
+            <div class="layer-title" style="transform: translateZ(20px);">Layer 1</div>
+          </div>
+        </div>
+
+        <div class="arch-reading-pane" id="arch-pane">
+          <div class="arch-pane-title">Architecture Overview</div>
+          <div class="arch-pane-desc">Click any layer in the stack on the left to see its detailed responsibilities and context.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: States --->
+    <section id="states">
+      <h2>Node Lifecycle</h2>
+      <p class="subtitle">A node moves gracefully through defined states. Click below to explore what happens during outages or resets.</p>
+
+      <div class="state-nodes">
+        <div class="state-dot" onclick="showStateInfo('unclaimed', this)">
+          <span style="font-size:1.5rem">📦</span>
+          <span>UNCLAIMED</span>
+        </div>
+        <div class="state-dot" onclick="showStateInfo('bare', this)">
+          <span style="font-size:1.5rem">🔌</span>
+          <span>BARE</span>
+        </div>
+        <div class="state-dot active" onclick="showStateInfo('operational', this)">
+          <span style="font-size:1.5rem">🟢</span>
+          <span>OPERATIONAL</span>
+        </div>
+        <div class="state-dot" onclick="showStateInfo('degraded', this)">
+          <span style="font-size:1.5rem">⚠️</span>
+          <span>DEGRADED</span>
+        </div>
+      </div>
+
+      <div class="state-info" id="state-panel">
+        <h3>OPERATIONAL</h3>
+        <p>Peripherals enumerated. Profile active. Data mode running. Normal runtime state. Streams data upstream.</p>
+        <p style="margin-top: 10px; font-size:0.85rem; color: var(--text-muted)">Transition: Upstream loss &rarr; <span class="tag">DEGRADED</span> | Peripherals removed &rarr; <span class="tag">BARE</span></p>
+      </div>
+
+    </section>
+
+    <!-- Section 6: Data Contract --->
+    <section id="data-contract">
+      <h2>Data Contract</h2>
+      <p class="subtitle">Every packet is self-describing. Upstream routing is handled seamlessly by the Harness based on the payload fields.</p>
+
+      <div class="glass-panel" style="margin-top:20px; overflow-x:auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted);">
+              <th style="padding: 16px;">Field</th>
+              <th style="padding: 16px;">Type</th>
+              <th style="padding: 16px;">Purpose</th>
+            </tr>
+          </thead>
+          <tbody class="mono" style="font-size: 0.9rem;">
+            <tr style="border-bottom: 1px solid rgba(42, 45, 62, 0.4);">
+              <td style="padding: 16px; color: var(--secondary);">space_id</td>
+              <td style="padding: 16px;">string</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">Logical space context</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(42, 45, 62, 0.4);">
+              <td style="padding: 16px; color: var(--secondary);">node_id</td>
+              <td style="padding: 16px;">string</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">Physical emitter identifier</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(42, 45, 62, 0.4);">
+              <td style="padding: 16px; color: var(--secondary);">peripheral_type</td>
+              <td style="padding: 16px;">enum</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">Sense/actuator category</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(42, 45, 62, 0.4);">
+              <td style="padding: 16px; color: var(--secondary);">timestamp_utc</td>
+              <td style="padding: 16px;">ISO 8601</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">NTP-synced capture time</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(42, 45, 62, 0.4);">
+              <td style="padding: 16px; color: var(--secondary);">sequence</td>
+              <td style="padding: 16px;">uint32</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">Monotonic counter for ordering</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(42, 45, 62, 0.4);">
+              <td style="padding: 16px; color: var(--secondary);">mode</td>
+              <td style="padding: 16px;">enum</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">push / stream / fetch / adaptive</td>
+            </tr>
+            <tr>
+              <td style="padding: 16px; color: var(--secondary);">payload</td>
+              <td style="padding: 16px;">bytes</td>
+              <td style="padding: 16px; color: var(--text-muted); font-family: var(--sans);">Audio chunk, JPEG, sensor event</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // Navigation Scroll Spy
+    const container = document.getElementById('scroll-container');
+    const sections = document.querySelectorAll('section');
+    const navLinks = document.querySelectorAll('.nav-links a');
+    
+    container.addEventListener('scroll', () => {
+      let current = '';
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        if (container.scrollTop >= sectionTop - 150) {
+          current = section.getAttribute('id');
+        }
+      });
+      navLinks.forEach(a => {
+        a.classList.remove('active');
+        if (a.getAttribute('href').includes(current)) {
+          a.classList.add('active');
+        }
+      });
+    });
+
+    // Space Picker
+    function selectSpace(type) {
+      document.querySelector('.space-cards').style.display = 'none';
+      const map = document.getElementById('space-map-container');
+      const content = document.getElementById('space-map-content');
+      map.style.display = 'block';
+      let html = '';
+      let casesHtml = '';
+      
+      if(type === 'home') {
+        html = `
+          <div class="placed-node" style="top:20%; left:20%">📷</div>
+          <div class="placed-node" style="top:50%; left:50%; border-color:var(--secondary)">🎤</div>
+          <div class="placed-node" style="top:70%; left:80%">🔊</div>
+        `;
+        casesHtml = `
+          <div class="space-use-cases">
+            <h4 style="margin-bottom:12px; color:var(--accent-light);">Sample Home Contexts</h4>
+            <div class="use-case-item"><span class="uc-icon">📷</span><b>Baby Room:</b> "Viewing baby room. Alerting if the baby rolls to an unsafe position."</div>
+            <div class="use-case-item"><span class="uc-icon">🎤</span><b>Living Room:</b> "Add milk to my grocery list." (Table mic catches this from sofa).</div>
+            <div class="use-case-item"><span class="uc-icon">🔊</span><b>Hallway Speaker:</b> "Hey, quick reminder, you might have forgot to give the baby his vitamins today."</div>
+            <div class="use-case-item"><span class="uc-icon">⚙️</span><b>Hybrid:</b> Automatically dims lights and sets thermostat when everyone leaves.</div>
+          </div>
+        `;
+      } else if (type === 'office') {
+        html = `
+          <div class="placed-node" style="top:10%; left:50%">🚨</div>
+          <div class="placed-node" style="top:60%; left:40%">🎤</div>
+          <div class="placed-node" style="top:60%; left:60%">🔊</div>
+        `;
+        casesHtml = `
+          <div class="space-use-cases">
+            <h4 style="margin-bottom:12px; color:var(--accent-light);">Sample Office Contexts</h4>
+            <div class="use-case-item"><span class="uc-icon">🚨</span><b>Lobby Sentinel:</b> Optically greets recognized VIP clients by name upon entry, notifies host.</div>
+            <div class="use-case-item"><span class="uc-icon">🎤</span><b>Boardroom Mic:</b> "Xentient, summarize the key action items from this meeting and send to all."</div>
+            <div class="use-case-item"><span class="uc-icon">🔊</span><b>Desk Speaker:</b> "Your 2 PM standup is starting in 5 minutes via Zoom."</div>
+          </div>
+        `;
+      } else {
+        html = `<div class="placed-node" style="top:50%; left:50%">🎒</div>`;
+        casesHtml = `
+          <div class="space-use-cases">
+            <h4 style="margin-bottom:12px; color:var(--accent-light);">Sample Travel Contexts</h4>
+            <div class="use-case-item"><span class="uc-icon">🎒</span><b>Offline Recall:</b> "Where did I park the car?" (Locally processed LLM without hotel WiFi).</div>
+            <div class="use-case-item"><span class="uc-icon">🔊</span><b>Companion:</b> "Warning: You left your passport folder at the previous location."</div>
+            <div class="use-case-item"><span class="uc-icon">🚨</span><b>Security:</b> Hotel room sentinel alerts immediately if anyone opens the door while you're asleep.</div>
+          </div>
+        `;
+      }
+      content.innerHTML = html + casesHtml;
+      
+      const reset = document.createElement('button');
+      reset.innerText = '← Change Space';
+      reset.style.cssText = 'position:absolute; top:20px; left:20px; background:var(--bg-panel); color:white; border:1px solid var(--border); padding:8px 16px; border-radius:6px; cursor:pointer; z-index:20;';
+      reset.onclick = () => { map.style.display = 'none'; document.querySelector('.space-cards').style.display = 'grid'; };
+      content.appendChild(reset);
+    }
+
+    // Drag and Drop Logic
+    function allowDrop(ev) { ev.preventDefault(); ev.target.classList.add('highlight'); }
+    function leaveDrop(ev) { ev.target.classList.remove('highlight'); }
+    
+    function drag(ev) {
+      ev.dataTransfer.setData("type", ev.target.dataset.type);
+      ev.dataTransfer.setData("id", ev.target.id);
+    }
+
+    let dockedTypes = new Set();
+    const peripheralPower = { listen: 0.4, speak: 1.2, sight: 2.5, sense: 0.2 };
+    
+    document.querySelectorAll('.node-slot').forEach(slot => {
+      slot.addEventListener('dragleave', leaveDrop);
+    });
+
+    function drop(ev) {
+      ev.preventDefault();
+      ev.target.classList.remove('highlight');
+      const type = ev.dataTransfer.getData("type");
+      const id = ev.dataTransfer.getData("id");
+      const slot = ev.target;
+      
+      if (slot.id === `slot-${type}` && !slot.classList.contains('filled')) {
+        const chip = document.getElementById(id);
+        slot.innerHTML = chip.querySelector('.chip-icon').innerHTML;
+        slot.classList.add('filled');
+        chip.style.opacity = '0.3';
+        chip.draggable = false;
+        
+        dockedTypes.add(type);
+        updateNodeRole();
+        
+        const base = document.getElementById('node-base');
+        base.style.transform = 'perspective(800px) rotateX(20deg) rotateY(0deg) scale(1.05)';
+        setTimeout(() => { base.style.transform = 'perspective(800px) rotateX(10deg) rotateY(-10deg) scale(1)'; }, 300);
+      }
+    }
+
+    function removeChip(slot, type, chipId, defaultText) {
+      if (!slot.classList.contains('filled')) return;
+      slot.classList.remove('filled');
+      slot.innerHTML = defaultText;
+      
+      const chip = document.getElementById(chipId);
+      chip.style.opacity = '1';
+      chip.draggable = true;
+      
+      dockedTypes.delete(type);
+      updateNodeRole();
+      
+      const base = document.getElementById('node-base');
+      base.style.transform = 'perspective(800px) rotateX(0deg) rotateY(15deg) scale(0.95)';
+      setTimeout(() => { base.style.transform = 'perspective(800px) rotateX(10deg) rotateY(-10deg) scale(1)'; }, 300);
+    }
+
+    function updateNodeRole() {
+      const label = document.getElementById('node-role-label');
+      const meter = document.getElementById('power-meter');
+      
+      let power = 0.1;
+      dockedTypes.forEach(t => power += peripheralPower[t]);
+      
+      if (dockedTypes.size === 0) {
+        label.innerText = "BARE NODE";
+        meter.innerHTML = `⚡ 0.1W (Base)`;
+        meter.style.background = 'rgba(109, 92, 255, 0.15)';
+        meter.style.borderColor = 'var(--accent)';
+        meter.style.color = 'var(--accent-light)';
+      } else {
+        meter.innerHTML = `⚡ ${power.toFixed(1)}W (Active)`;
+        meter.style.background = 'rgba(34, 197, 94, 0.15)';
+        meter.style.borderColor = 'var(--success)';
+        meter.style.color = 'var(--success)';
+      }
+      
+      if (dockedTypes.has('listen') && dockedTypes.size === 1) label.innerText = "EAR NODE";
+      else if (dockedTypes.has('speak') && dockedTypes.size === 1) label.innerText = "VOICE NODE";
+      else if (dockedTypes.has('sight') && dockedTypes.size === 1) label.innerText = "EYE NODE";
+      else if (dockedTypes.has('sense') && dockedTypes.size === 1) label.innerText = "SENTINEL NODE";
+      else if (dockedTypes.size > 0) label.innerText = "HYBRID NODE";
+      
+      if (dockedTypes.size > 0) {
+        label.style.background = 'rgba(34, 197, 94, 0.15)';
+        label.style.borderColor = 'var(--success)';
+        label.style.color = 'var(--success)';
+      } else {
+        label.style.background = 'rgba(109, 92, 255, 0.15)';
+        label.style.borderColor = 'var(--accent)';
+        label.style.color = 'var(--accent-light)';
+      }
+    }
+
+    // Simulation Animation
+    function runSim() {
+      const packet = document.getElementById('packet');
+      const steps = ['stt', 'id', 'mem', 'llm', 'tts'];
+      const btn = document.querySelector('.play-sim-btn');
+      
+      btn.disabled = true;
+      document.getElementById('sim-mic').style.borderColor = 'var(--secondary)';
+      document.getElementById('sim-mic').style.boxShadow = '0 0 20px rgba(34, 211, 238, 0.5)';
+      
+      steps.forEach(s => document.getElementById(`pipe-${s}`).classList.remove('active'));
+      document.getElementById('sim-speak').style.borderColor = 'var(--border)';
+      document.getElementById('sim-speak').style.boxShadow = 'none';
+      document.getElementById('sim-response').classList.remove('active');
+
+      // Show trigger context bubble
+      document.getElementById('sim-context').classList.add('active');
+
+      packet.style.opacity = '1';
+      packet.style.transition = 'left 1s linear';
+      packet.style.left = '350px';
+
+      setTimeout(() => {
+        packet.style.opacity = '0';
+        document.getElementById('sim-context').classList.remove('active');
+        
+        steps.forEach((step, idx) => {
+          setTimeout(() => {
+            document.getElementById(`pipe-${step}`).classList.add('active');
+            if (idx === steps.length - 1) finishSim();
+          }, idx * 1000); // Slower pacing to let the data render
+        });
+      }, 1000);
+    }
+    
+    function finishSim() {
+      setTimeout(() => {
+        const speak = document.getElementById('sim-speak');
+        speak.style.borderColor = 'var(--success)';
+        speak.style.boxShadow = '0 0 20px rgba(34, 197, 94, 0.5)';
+        
+        const packet = document.getElementById('packet');
+        packet.style.background = 'var(--success)';
+        packet.style.transition = 'none';
+        packet.style.left = 'calc(100% - 350px)';
+        packet.style.opacity = '1';
+        
+        setTimeout(() => {
+          packet.style.transition = 'left 1s linear';
+          packet.style.left = '100%';
+          setTimeout(() => {
+            packet.style.opacity = '0';
+            document.getElementById('sim-response').classList.add('active');
+            setTimeout(() => {
+              document.querySelector('.play-sim-btn').disabled = false;
+              packet.style.transition = 'none';
+              packet.style.left = '0';
+              packet.style.background = 'var(--secondary)';
+              document.getElementById('sim-mic').style.borderColor = 'var(--border)';
+              document.getElementById('sim-mic').style.boxShadow = 'none';
+              
+              // hide response after 3s
+              setTimeout(() => { document.getElementById('sim-response').classList.remove('active'); }, 3000);
+            }, 500);
+          }, 1000);
+        }, 100);
+      }, 400);
+    }
+
+    // Architecture Modes
+    function setArchMode(mode) {
+      document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      
+      const layers = document.querySelectorAll('.arch-layer');
+      if(mode === 'managed') {
+        layers[0].style.borderStyle = 'solid'; 
+        layers[1].style.borderStyle = 'solid'; 
+        layers[1].style.borderColor = 'var(--border)';
+      } else if(mode === 'hybrid') {
+        layers[0].style.borderStyle = 'solid';
+        layers[1].style.borderStyle = 'dashed'; 
+        layers[1].style.borderColor = 'var(--warning)';
+      } else if(mode === 'local') {
+        layers[0].style.borderStyle = 'dashed'; 
+        layers[1].style.borderStyle = 'solid';
+        layers[1].style.borderColor = 'var(--success)'; 
+      }
+    }
+
+    const archData = {
+      4: { title: "Layer 4: Platform (Cloud)", text: "Handles account management, global node registry, and secure OTA firmware delivery. Strict requirement: only needed once for initial claiming, entirely optional for daily operation." },
+      3: { title: "Layer 3: The Harness", text: "The brains of the operation. Holds the logic tree, models, node roles, memory rules, and identity gating. Can be hosted in the Cloud, self-hosted on a local server, or embedded inside a master node." },
+      2: { title: "Layer 2: The Space", text: "The logical container tying everything together. A Space holds multiple bound Nodes, data streams, and verified human members. Example: 'Office Conference Room'." },
+      1: { title: "Layer 1: The Node", text: "The raw hardware. Represents the Node Base and any attached physical peripherals (I2S, SPI, I2C). Firmware acts only as a secure bridge, separated from its functional profile." }
+    };
+
+    function selectArchLayer(layer, el) {
+      document.querySelectorAll('.arch-layer').forEach(l => l.classList.remove('selected-layer'));
+      el.classList.add('selected-layer');
+
+      document.getElementById('arch-pane').innerHTML = `
+        <div class="arch-pane-title">${archData[layer].title}</div>
+        <div class="arch-pane-desc">${archData[layer].text}</div>
+      `;
+    }
+
+    // State Lifecycle Info
+    const statesData = {
+      unclaimed: {
+        title: "UNCLAIMED",
+        desc: "Brand new. No WiFi, no owner. QR-encoded HW ID. Broadcasts local presence. Waits for scan &rarr; cloud claim.",
+        trans: "Scan QR + Auth &rarr; <span class='tag'>CLAIMED</span>"
+      },
+      bare: {
+        title: "CLAIMED / BARE",
+        desc: "WiFi configured. Cloud-connected. No peripherals/profile active. Heartbeats on interval. Awaits docking + profile push.",
+        trans: "Dock peripherals + OTA profile &rarr; <span class='tag'>OPERATIONAL</span>"
+      },
+      operational: {
+        title: "OPERATIONAL",
+        desc: "Peripherals enumerated. Profile active. Data mode running. Normal runtime state. Streams data upstream.",
+        trans: "Upstream loss &rarr; <span class='tag'>DEGRADED</span> | Peripherals removed &rarr; <span class='tag'>BARE</span>"
+      },
+      degraded: {
+        title: "DEGRADED",
+        desc: "Profile active. Peripherals running. No upstream path. Buffers events locally (best-effort, newest priority). Auto-retries.",
+        trans: "Restored &rarr; <span class='tag'>OPERATIONAL</span>"
+      }
+    };
+
+    function showStateInfo(stateKey, el) {
+      document.querySelectorAll('.state-dot').forEach(d => {
+        d.classList.remove('active');
+        d.classList.remove('degraded');
+      });
+      el.classList.add(stateKey === 'degraded' ? 'degraded' : 'active');
+      
+      const data = statesData[stateKey];
+      const panel = document.getElementById('state-panel');
+      panel.innerHTML = `
+        <h3 style="color:${stateKey === 'degraded' ? 'var(--warning)' : 'var(--accent-light)'}">${data.title}</h3>
+        <p>${data.desc}</p>
+        <p style="margin-top: 10px; font-size:0.85rem; color: var(--text-muted)">Transition: ${data.trans}</p>
+      `;
+    }
+
+  </script>
+</body>
+</html>
