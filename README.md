@@ -21,8 +21,9 @@ The primary entry point for understanding Xentient is the **Interactive Presenta
 
 - [`xentient_presentation.html`](xentient_presentation.html): The central interactive dashboard (Single-file HTML/CSS/JS).
 - [`xentient.md`](xentient.md): Comprehensive technical specifications and architectural documentation.
+- [`Xentient_Project_Timeline.md`](Xentient_Project_Timeline.md): Master timeline and high-level project plan, including hardware workstreams and AI pipeline.
 - [`Xentient_Procurement_Strategy.md`](Xentient_Procurement_Strategy.md): Detailed technical analysis and strategic parts procurement.
-- [`Xentient_Shopping_List.md`](Xentient_Shopping_List.md): Blank Bill of Materials list tailored for scouting local shop prices.
+- [`Xentient_Shopping_List.md`](Xentient_Shopping_List.md): Live Bill of Materials tracking and ordered parts inventory.
 
 ## 🚀 Getting Started
 
