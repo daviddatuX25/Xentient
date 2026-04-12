@@ -1,0 +1,32 @@
+{
+  "nodeId": "prima-node-01",
+  "mqtt": {
+    "brokerUrl": "mqtt://localhost:1883"
+  },
+  "audio": {
+    "wsPort": 8080,
+    "sampleRate": 16000,
+    "bitDepth": 16,
+    "channels": 1,
+    "maxBufferBytes": 2097152,
+    "maxBufferDurationMs": 45000
+  },
+  "stt": {
+    "provider": "deepgram",
+    "language": "en-US"
+  },
+  "tts": {
+    "provider": "elevenlabs",
+    "voiceId": "21m00Tcm4TlvDq8ikWAM"
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "temperature": 0.7,
+    "maxTokens": 500
+  },
+  "pipeline": {
+    "factExtractMinWords": 5,
+    "factExtractDebounceMs": 10000
+  }
+}
