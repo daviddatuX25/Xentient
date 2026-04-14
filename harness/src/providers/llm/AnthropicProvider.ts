@@ -23,7 +23,9 @@ export class AnthropicProvider implements LLMProvider {
     const stream = await this.client.messages.stream({
       model: this.model,
       system: systemPrompt,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      messages: messages
+        .filter(m => m.role !== 'system')  // Anthropic handles system via separate param
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       temperature: options.temperature ?? 0.7,
       max_tokens: options.maxTokens ?? 500,
     });

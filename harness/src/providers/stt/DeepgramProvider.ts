@@ -68,7 +68,9 @@ export class DeepgramProvider implements STTProvider {
     // Feed audio into Deepgram while queue drains concurrently
     const feedAudio = async () => {
       for await (const chunk of audioStream) {
-        connection.send(chunk as Buffer);
+        // Deepgram SDK requires SocketDataLike (ArrayBuffer | Blob) — extract underlying ArrayBuffer
+        const buf = chunk as Buffer;
+        connection.send(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
       }
       connection.requestClose();
     };

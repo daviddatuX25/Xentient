@@ -16,13 +16,13 @@ export class ElevenLabsProvider implements TTSProvider {
 
   async synthesize(text: string): Promise<Readable> {
     logger.debug({ textLength: text.length }, 'Synthesizing speech');
-    const audioStream = this.client.generate({
+    const audioIterable = await this.client.generate({
       voice: this.voiceId,
       text,
       model_id: 'eleven_flash_v2_5',  // ~75ms inference, optimized for real-time
       output_format: 'pcm_16000',     // Match ESP32 expected format
     });
-    return Readable.from(audioStream as AsyncIterable<Buffer>);
+    return Readable.from(audioIterable as AsyncIterable<Buffer>);
   }
 
   synthesizeStreaming(textStream: AsyncIterable<string>): Readable {
