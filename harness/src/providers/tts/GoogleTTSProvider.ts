@@ -36,7 +36,7 @@ export class GoogleTTSProvider implements TTSProvider {
         }
       }
       readable.push(null);
-    })();
+    })().catch(err => readable.destroy(err));
     return readable;
   }
 }
