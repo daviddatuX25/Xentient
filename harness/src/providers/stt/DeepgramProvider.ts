@@ -29,34 +29,65 @@ export class DeepgramProvider implements STTProvider {
     return transcript;
   }
 
-  /** Streaming transcription for VAD-delimited audio */
+  /**
+   * Streaming transcription for VAD-delimited audio.
+   * Uses a queue + resolve-notify pattern to bridge Deepgram's event emitter
+   * to an async iterable — yields chunks as they arrive, not all at the end.
+   */
   async *transcribeStream(audioStream: Readable): AsyncIterable<TranscriptChunk> {
+    const queue: TranscriptChunk[] = [];
+    let notify: (() => void) | null = null;
+    let connectionClosed = false;
+
     const connection = this.client.listen.live({
       model: 'nova-2',
       language: 'en-US',
       smart_format: true,
-      interim_results: true,  // stream partial results for lower perceived latency
+      interim_results: true,
       endpointing: 300,
     });
 
-    const chunks: TranscriptChunk[] = [];
-
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
       const alt = data.channel?.alternatives?.[0];
-      if (alt?.transcript) {
-        chunks.push({
+      // Only yield final transcripts to avoid duplicate partial results
+      if (alt?.transcript && data.is_final) {
+        queue.push({
           text: alt.transcript,
-          is_final: data.is_final ?? false,
+          is_final: true,
           confidence: alt.confidence,
         });
+        notify?.();
       }
     });
 
-    for await (const chunk of audioStream) {
-      connection.send(chunk as Buffer);
-    }
-    connection.requestClose();
+    connection.on(LiveTranscriptionEvents.Close, () => {
+      connectionClosed = true;
+      notify?.();
+    });
 
-    for (const chunk of chunks) yield chunk;
+    // Feed audio into Deepgram while queue drains concurrently
+    const feedAudio = async () => {
+      for await (const chunk of audioStream) {
+        connection.send(chunk as Buffer);
+      }
+      connection.requestClose();
+    };
+
+    feedAudio().catch(err => {
+      logger.error({ err }, 'Deepgram audio feed error');
+      connectionClosed = true;
+      notify?.();
+    });
+
+    // Yield chunks as they arrive from the event queue
+    while (!connectionClosed || queue.length > 0) {
+      if (queue.length > 0) {
+        yield queue.shift()!;
+      } else {
+        // Park until Deepgram emits the next final transcript or close event
+        await new Promise<void>(resolve => { notify = resolve; });
+        notify = null;
+      }
+    }
   }
 }
