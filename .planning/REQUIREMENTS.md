@@ -35,6 +35,15 @@ Requirements for the April 24 Prototype.
 - **LOCAL-01**: Fully local LLM/Voice stack (Ollama/Whisper/Piper) on edge server.
 - **OTA-01**: Over-the-air firmware updates for Node Base base.
 
+### Documentation Architecture
+- [x] **DOC-01**: VISION.md exists as canonical L1 vision with bridge model, integration tiers, Spaces/Modes primitives.
+- [x] **DOC-02**: NON_GOALS.md explicitly lists what Xentient is NOT, including no Archon in v1 demo.
+- [x] **DOC-03**: HARDWARE.md preserves B1-B7 decisions verbatim from NOTES.md.
+- [ ] **DOC-04**: CONTRACTS.md, PACKS.md, SPACES.md exist as L2 spec documents.
+- [ ] **DOC-05**: INTEGRATIONS/hermes.md, mem0.md, openclaw.md exist as L2 integration specs.
+- [x] **DOC-06**: README.md rewritten as 60-second pitch aligned with bridge model.
+- [x] **DOC-07**: Archon contradiction resolved (included as P9 in Platform Track, deferred in demo scope).
+
 ## Out of Scope
 | Feature | Reason |
 |---------|--------|
@@ -52,12 +61,19 @@ Requirements for the April 24 Prototype.
 | HARN-02 | Phase 2 | Pending |
 | MEM-01 | Phase 2 | Pending |
 | WEB-01 | Phase 3 | Pending |
+| DOC-01 | Phase 5 | Complete |
+| DOC-02 | Phase 5 | Complete |
+| DOC-03 | Phase 5 | Complete |
+| DOC-04 | Phase 5 | Pending |
+| DOC-05 | Phase 5 | Pending |
+| DOC-06 | Phase 5 | Complete |
+| DOC-07 | Phase 5 | Complete |
 
 **Coverage:**
-- v1 requirements: 15 total
-- Mapped to phases: 7 (Initial mapping)
+- v1 requirements: 22 total
+- Mapped to phases: 14
 - Unmapped: 8 (Remaining hardware assembly and presentation)
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-13 after initial definition*
+*Last updated: 2026-04-19 — DOC requirements added, DOC-01/02/03/06/07 marked complete*

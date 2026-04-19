@@ -2,7 +2,7 @@
 
 ## Overview
 
-Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room. Two tracks: **Demo Track** (frozen scope, through April 24) and **Platform Track** (post-capstone evolution, P1-P8).
+Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room. Two tracks: **Demo Track** (frozen scope, through April 24) and **Platform Track** (post-capstone evolution, P1-P9).
 
 ## Demo Track (Frozen — Through Apr 24)
 
@@ -28,6 +28,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | P6: Communication Bridge | REST/WS/MQTT bridge to AI brain layer | +100 LOC | P1 |
 | P7: OpenClaw Adapter | Computer-use handler | +60 LOC | P5 |
 | P8: Archon Adapter | Basic YAML DAG workflow delegation | +50 LOC | P5 |
+| P9: Communication Bridge | REST/WS/MQTT bridge to AI brain layer | +100 LOC | P1 |
 
 ## Phase Details
 
@@ -76,7 +77,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 - [ ] 04-01: Latency audit, error-handling polish, and demo narrative synchronization.
 
 ### Phase 5: Doc Architecture Refactor
-**Goal**: Restructure all project documentation to reflect the bridge-model vision. Two-track roadmap: Demo Track (frozen) + Platform Track (P1-P8).
+**Goal**: Restructure all project documentation to reflect the bridge-model vision. Two-track roadmap: Demo Track (frozen) + Platform Track (P1-P9).
 **Depends on**: Nothing (documentation-only)
 **Requirements**: DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07
 **Success Criteria**:
@@ -86,9 +87,9 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
   4. ROADMAP.md updated with Demo Track (frozen) + Platform Track (P1-P8).
   5. NOTES.md trimmed to append-only decision log; platform/pack content extracted.
   6. All hardware decisions B1-B7 preserved verbatim in HARDWARE.md.
-  7. Archon contradiction resolved (included as P8 in Platform Track, deferred in demo scope).
+  7. Archon contradiction resolved (included as P9 in Platform Track, deferred in demo scope).
 **Plans**: 3 plans
-- [ ] 05-01: Create VISION.md, NON_GOALS.md, HARDWARE.md, rewrite README.md
+- [x] 05-01: Create VISION.md, NON_GOALS.md, HARDWARE.md, rewrite README.md
 - [ ] 05-02: Create CONTRACTS.md, PACKS.md, SPACES.md, INTEGRATIONS/*.md
 - [ ] 05-03: Rewrite ROADMAP.md, PROJECT.md, REQUIREMENTS.md; trim NOTES.md; shrink xentient.md; add SUPERSEDED marker; update STATE.md
 
@@ -100,7 +101,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 2. Harness & Intel | 0/2 | Superseded | - |
 | 3. Web & Assembly | 0/2 | Not started | - |
 | 4. Optimization | 0/1 | Not started | - |
-| 5. Doc Refactor | 0/3 | In progress | - |
+| 5. Doc Refactor | 1/3 | In progress | 05-01 |
 
 ## Document Architecture
 
