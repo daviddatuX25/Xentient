@@ -72,13 +72,13 @@ flowchart LR
 
 | Function        | Pin       | Direction | Goes to               | Status |
 |-----------------|-----------|-----------|------------------------|--------|
-| I2C SDA         | GPIO21    | bidir     | BME280, LCD            | ✅     |
-| I2C SCL         | GPIO22    | out       | BME280, LCD            | ✅     |
-| I2S BCLK        | GPIO26    | out       | INMP441 SCK, MAX98357 BCLK | ✅ |
-| I2S LRCK / WS   | GPIO25    | out       | INMP441 WS, MAX98357 LRC   | ✅ |
-| I2S DIN (mic)   | GPIO35    | in        | INMP441 SD              | ✅ (input-only pin OK)|
+| I2C SDA         | GPIO21    | bidir     | BME280, LCD            | ✅ VALIDATED 2026-04-20 |
+| I2C SCL         | GPIO22    | out       | BME280, LCD            | ✅ VALIDATED 2026-04-20 |
+| I2S BCLK        | GPIO26    | out       | INMP441 SCK, MAX98357 BCLK | ✅ VALIDATED 2026-04-20 |
+| I2S LRCK / WS   | GPIO25    | out       | INMP441 WS, MAX98357 LRC   | ✅ VALIDATED 2026-04-20 |
+| I2S DIN (mic)   | GPIO35    | in        | INMP441 SD              | ✅ VALIDATED 2026-04-20 — left ch, >>16 shift, peak ~2200 loud |
 | I2S DOUT (amp)  | GPIO27    | out       | MAX98357 DIN            | ✅ resolved (was GPIO22 conflict) |
-| PIR interrupt   | GPIO13    | in        | PIR OUT                 | ✅     |
+| PIR interrupt   | GPIO13    | in        | PIR OUT                 | ⏳ not yet tested |
 | CAM UART TX     | GPIO1     | out       | ESP32-CAM RX            | ⚠️ UART0 = USB serial (boot log) |
 | CAM UART RX     | GPIO3     | in        | ESP32-CAM TX            | ⚠️ same — consider UART2 |
 | LCD             | shared    | -         | I2C bus                 | ✅     |
@@ -202,8 +202,8 @@ Speaker wires: **Red** (+), **Black** (−)
 Per HARDWARE.md, build and prove on breadboard BEFORE designing the dock PCB:
 
 1. **Power path** — TP4056 → 18650 → MT3608 → 5V → 3.3V LDO. Measure rails with multimeter.
-2. **I2C bus** — BME280 + LCD on shared SDA/SCL. Run `Wire` scanner sketch, expect `0x27` and `0x76`.
-3. **I2S loopback** — INMP441 capture → MAX98357 playback on GPIO27 DIN. Confirms BCLK/LRCK timing.
+2. **I2C bus** — BME280 + LCD on shared SDA/SCL. Run `Wire` scanner sketch, expect `0x27` and `0x76`. ✅ PASS 2026-04-20
+3. **I2S mic** — INMP441 capture on GPIO35. Left channel confirmed, >>16 shift, peak ~2200 loud/~50 silence. ✅ PASS 2026-04-20
 4. **PIR** — GPIO13 attachInterrupt, log motion events. Standalone 3-pin connector.
 5. **ESP32-CAM** — flash independently first, then connect via 4-wire UART. Decide UART0 vs UART2 here.
 
@@ -216,3 +216,4 @@ Each step → tick the box and update the affected section above with the actual
 - 2026-04-19 — Initial draft. Captured housing matrix, GPIO draft, flagged GPIO22 conflict and CAM UART0 concern as open questions.
 - 2026-04-19 — Major restructure. Split "Sense" into standalone "Climate" (BME280) and "Motion" (PIR) modules. Resolved GPIO22 conflict: I2S DOUT moved to GPIO27. Added 3-pin GPIO connector spec. Updated ESP32-CAM notes (independent flash, 4-wire UART). 6 housings total (was 5).
 - 2026-04-19 — Replaced generic JST pinout tables with per-module wiring tables showing actual soldered wire colors (Climate, Speak) and recommended standard colors (Listen, Motion, Sight, LCD). Flagged Speak DIN wire as not yet soldered.
+- 2026-04-20 — 1xi VALIDATION PASS: I2C scanner confirmed LCD 0x27 + BME280 0x76. I2S mic read confirmed INMP441 on left channel (L/R=GND), >>16 shift correct. Calibrated: silence ~0.001 RMS / ~50 peak, normal speech ~0.02 RMS / ~1600 peak, loud/near ~0.04 RMS / ~2200 peak. VAD thresholds 1000/600 confirmed appropriate. Marked PIR as not yet tested.
