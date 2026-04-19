@@ -9,6 +9,7 @@ import { WhisperProvider } from "./providers/stt/WhisperProvider";
 import { ElevenLabsProvider } from "./providers/tts/ElevenLabsProvider";
 import { OpenAIProvider } from "./providers/llm/OpenAIProvider";
 import { Pipeline } from "./engine/Pipeline";
+import { ModeManager } from "./engine/ModeManager";
 import { STTProvider, TTSProvider, LLMProvider } from "./providers/types";
 import { PROTOCOL_VERSION } from "./shared/contracts";
 import pino from "pino";
@@ -54,6 +55,17 @@ async function main() {
 
   const pipeline = new Pipeline({ stt, tts, llm, mqtt, audio: audioServer, getMemoryContext });
 
+  // Mode Manager — wires mode state machine to MQTT events and Pipeline
+  const modeManager = new ModeManager(mqtt);
+  pipeline.setModeManager(modeManager);
+
+  mqtt.on("modeCommand", (data) => modeManager.handleModeCommand(data));
+  mqtt.on("sensor", (data) => modeManager.handleSensorEvent(data));
+
+  modeManager.on("modeChange", ({ from, to }) => {
+    logger.info({ from, to }, "Mode changed");
+  });
+
   pipeline.on("transcript", (t) => logger.info({ transcript: t }, "User said"));
   pipeline.on("turnComplete", (t) => logger.info(t, "Turn complete"));
   pipeline.on("heartbeat", (h) => logger.debug(h, "Heartbeat"));
@@ -62,6 +74,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down gracefully...");
+    modeManager.clearIdleTimer();
     mqtt.disconnect();
     audioServer.close();
     process.exit(0);

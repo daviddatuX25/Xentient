@@ -33,8 +33,16 @@ export type Mode = (typeof MODE_VALUES)[number];
 export const MODE_TRANSITIONS: Record<Mode, Mode[]> = {
   sleep: ["listen"],
   listen: ["active", "sleep", "record"],
-  active: ["listen"],
-  record: ["listen"],
+  active: ["listen", "sleep", "record"],
+  record: ["listen", "sleep"],
+};
+
+// ── LCD Face Constants ─────────────────────────────────────────────
+export const LCD_FACES: Record<Mode, { line1: string; line2: string }> = {
+  sleep: { line1: "(_ _) Zzz", line2: "" },
+  listen: { line1: "(O_O)", line2: "listening..." },
+  active: { line1: "(^_^)", line2: "" },
+  record: { line1: "(_ _) REC", line2: "" },
 };
 
 // ── Base Envelope ────────────────────────────────────────────────────

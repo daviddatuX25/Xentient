@@ -3,6 +3,8 @@ import pino from 'pino';
 import { MqttClient, VADEvent } from '../comms/MqttClient';
 import { AudioServer } from '../comms/AudioServer';
 import { STTProvider, TTSProvider, LLMProvider, MemoryContext } from '../providers/types';
+import type { ModeManager } from './ModeManager';
+import type { Mode } from '../shared/contracts';
 
 const logger = pino({ name: 'pipeline' });
 
@@ -27,11 +29,17 @@ export class Pipeline extends EventEmitter {
   private isListening: boolean = false;
   private isProcessing: boolean = false;
   private vadTimeout: ReturnType<typeof setTimeout> | null = null;
+  private modeManager: ModeManager | null = null;
 
   constructor(opts: PipelineOptions) {
     super();
     this.opts = opts;
     this.setupListeners();
+  }
+
+  /** Inject ModeManager reference for mode-aware audio gating. */
+  setModeManager(mm: ModeManager): void {
+    this.modeManager = mm;
   }
 
   /** Reset all state — called on disconnect or pipeline errors (review fix: hung state) */
@@ -52,6 +60,14 @@ export class Pipeline extends EventEmitter {
 
     // STAGE 1: Audio chunking via WebSocket (NOT MQTT)
     audio.on('audioChunk', (chunk: Buffer) => {
+      const mode = this.modeManager?.getMode() ?? 'active';
+
+      // sleep mode: drop all audio — no processing
+      if (mode === 'sleep') return;
+
+      // record mode: buffer audio but don't run pipeline
+      // (audio capture handled externally, just don't process here)
+
       if (!this.isListening) return;
 
       // [REVIEW FIX: HIGH] Guard against unbounded buffer growth
@@ -69,6 +85,20 @@ export class Pipeline extends EventEmitter {
 
     // STAGE 2: VAD gates determine utterance boundaries (via MQTT)
     mqtt.on('vad', (event: VADEvent) => {
+      const mode = this.modeManager?.getMode() ?? 'active';
+
+      // sleep mode: ignore VAD events entirely
+      if (mode === 'sleep') return;
+
+      // listen mode: VAD start triggers transition to active
+      if (mode === 'listen' && event.type === 'start') {
+        this.modeManager?.transition('active');
+        this.modeManager?.resetIdleTimer();
+      }
+
+      // record mode: buffer audio but don't trigger full pipeline
+      if (mode === 'record') return;
+
       if (event.type === 'start') {
         logger.info('VAD start — buffering audio');
         this.audioBuffer = [];
