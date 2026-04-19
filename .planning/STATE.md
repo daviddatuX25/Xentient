@@ -3,27 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in-progress
-last_updated: "2026-04-19T01:57:39Z"
+last_updated: "2026-04-19T02:42:27Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 9
-  completed_plans: 1
-  percent: 11
+  completed_plans: 3
+  percent: 33
 ---
 
 # Project State: Xentient
 
 ## Project Reference
 
-See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-13)
+See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-19)
 
 **Core value:** The IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room.
-**Current focus:** Phase 5 — doc-architecture-refactor (plan 01 complete, plan 02 next)
+**Current focus:** Phase 5 — doc-architecture-refactor (plans 01-03 complete)
 
 ## Active Context
 
-Phase 5 Plan 01 complete: four foundation documents created (VISION.md, NON_GOALS.md, HARDWARE.md, README.md). Bridge model and three-tier architecture are now canonical. Next: L2 spec docs (CONTRACTS.md, PACKS.md, SPACES.md, INTEGRATIONS/).
+Phase 5 complete: all doc architecture refactor plans executed. ROADMAP.md rewritten with two-track structure (Demo Track + Platform Track P1-P9). PROJECT.md and REQUIREMENTS.md updated for bridge model. NOTES.md trimmed to append-only decision log. xentient.md shrunk to ~90-line L0 pitch. Phase 2 marked SUPERSEDED.
 
 ## Milestone Status
 
@@ -33,23 +33,29 @@ Phase 5 Plan 01 complete: four foundation documents created (VISION.md, NON_GOAL
 
 ## Recent Decisions
 
-- Brain Router renamed from Tool Router — routing layer between Core and AI Brain tier
-- Three-tier architecture: Hardware / Core / AI Brain (replaces two-layer model)
-- Core = Runtime daemon (Face A) + Web Control Panel (Face B), always-on
-- Migration path extended to P1-P9 (added P6 Web Control Panel, P9 Archon Adapter)
-- Open Questions removed from VISION.md — belong in individual spec docs
-- Date/status header removed from VISION.md — evergreen document
+- Bridge model adopted: Xentient = IoT terminal, not AI brain
+- Three-tier architecture: Hardware / Core (Runtime + Web Control Panel) / AI Brain
+- 4-layer doc system established (L0-L4)
+- Phase 2 plans superseded by bridge reframe
+- Two-track roadmap: Demo Track (frozen) + Platform Track (P1-P9)
+- Brain Router: Core's dispatch layer routing handler calls across tiers
+- Mem0 as primary memory layer (P2), Hermes as default brain (P1)
+- Demo ships current harness as-is — no Platform Track code before Apr 24
 
 ## Roadmap Evolution
 
-- Phase 5 added: Doc architecture refactor — restructure all docs to reflect bridge-model vision (Xentient = IoT terminal, not AI brain)
+- Phase 5 added: Doc architecture refactor — restructure all docs to reflect bridge-model vision
 - Phase 5 Plan 01 complete: VISION.md, NON_GOALS.md, HARDWARE.md, README.md created
+- Phase 5 Plan 02 complete: CONTRACTS.md, PACKS.md, SPACES.md, INTEGRATIONS/*.md created
+- Phase 5 Plan 03 complete: ROADMAP.md, PROJECT.md, REQUIREMENTS.md updated; NOTES.md trimmed; xentient.md shrunk; SUPERSEDED.md added
 
 ## Performance Metrics
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 05 | 01 | 15 min | 2 | 4 |
+| 05 | 02 | 20 min | 2 | 7 |
+| 05 | 03 | 10 min | 2 | 7 |
 
 ---
-*State updated: 2026-04-19T01:57:39Z*
+*State updated: 2026-04-19T02:42:27Z*
