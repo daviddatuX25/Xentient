@@ -1,6 +1,6 @@
-# Xentient Web Control Panel
+# Xentient Web Console
 
-> L2 Spec — Core's Face B. Browser-based control plane for hardware configuration, state management, pack/space permissions, and integration toggles. Shares the Core codebase with the Runtime daemon. Implemented in Platform Track P6.
+> L2 Spec — Operator's browser-based console for Xentient. **Separate Laravel + Livewire 3 application** that is a *client* of Core (talks to Core via REST/WebSocket and to the MQTT broker directly). Not part of the Core codebase. Hostable alongside Core on the same machine (local PC + tunnel for demo) or as a separate VPS deployment (platform). Implemented in Demo Phase 3 (minimum cut) and Platform Track P6 (full feature set).
 
 ---
 
@@ -9,54 +9,70 @@
 Xentient's architecture is explicitly three-tier (see VISION.md):
 
 - **Tier 1 — Hardware:** Node Bases with docked peripherals. Physical sensing and actuation. Dumb by design.
-- **Tier 2 — Core:** The always-on hosted layer. Runs the Runtime daemon and Web Control Panel as two faces of the same system.
+- **Tier 2 — Core (runtime + console):** The always-on Core runtime (Node.js or Python) and a *separate* Laravel Web Console. Both reside in Tier 2 but are independent processes with independent codebases. They communicate over documented contracts (REST + WebSocket + MQTT).
 - **Tier 3 — AI Brain:** Remote/sandboxed services — Hermes, Mem0, OpenClaw, Archon.
 
-The **Web Control Panel is the human-facing surface of Core.** The **Runtime daemon is the machine-facing surface.** Both read/write the same Core state:
+The **Web Console is the human surface.** The **Core runtime is the machine surface.** They share *data* (state, artifacts, telemetry) via REST/WS/MQTT — they do **not** share a process or codebase. Either can crash and restart without taking down the other.
 
-- MQTT broker connection and message history
-- Space registry (active spaces, modes, permissions)
-- Pack registry (installed packs, active pack per space)
-- Brain Router configuration (adapter connections, integration status)
-- Sensor telemetry buffer (recent readings from all Node Bases)
-
-This shared-state model means the Web Control Panel can show the same real-time state that the Runtime daemon operates on. No sync lag. No eventual consistency. One source of truth.
+What the Web Console reads/writes (via Core APIs and MQTT):
+- MQTT broker connection (subscribes for telemetry; publishes control messages)
+- Space registry (read via Core REST; mutations via Core REST → MQTT)
+- Pack registry (post-demo)
+- Brain Router configuration (post-demo)
+- Sensor telemetry buffer (live via WebSocket from Core)
+- **Recording artifacts** (filesystem path resolved via Core REST; playback via signed URL)
 
 ---
 
 ## Hosting Model
 
-Core runs live 24/7 on a server (self-hosted or cloud VPS). The Web Control Panel is served from the same process or a sibling process on the same host.
+Core and Web are **independent processes** that can be co-hosted or split. There is no requirement that they share a host.
+
+### Demo (Apr 24): Local PC + Tunnel
 
 ```
-┌─────────────────────────────────────────┐
-│  Core Server (always-on)                │
-│                                         │
-│  ┌─────────────────┐  ┌──────────────┐ │
-│  │ Runtime Daemon   │  │ Web Control  │ │
-│  │ (Face A)         │  │ Panel (Face B)│ │
-│  │ - Voice Pipeline │  │ - HTTPS      │ │
-│  │ - MQTT Bridge     │  │ - REST API   │ │
-│  │ - LCD Face       │  │ - WebSocket  │ │
-│  │ - Brain Router   │  │   telemetry  │ │
-│  └────────┬────────┘  └──────┬───────┘ │
-│           └────────┬────────┘          │
-│                    │                    │
-│             ┌──────┴──────┐            │
-│             │ Shared Core │            │
-│             │ State       │            │
-│             │ - Spaces    │            │
-│             │ - Packs     │            │
-│             │ - Sensors   │            │
-│             │ - Router    │            │
-│             └─────────────┘            │
-└─────────────────────────────────────────┘
-         │                    │
-    MQTT/WS (to        HTTPS (to admin
-    Node Bases)         browser)
+┌────────────────────────────────────────────────┐
+│  Operator PC (Windows + Laragon)               │
+│                                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────┐│
+│  │ Core Runtime │  │ Web Console  │  │Mosq- ││
+│  │ (Node/Python)│  │ (Laravel +   │  │uitto ││
+│  │              │  │  Livewire +  │  │broker││
+│  │  - Voice     │  │  Reverb)     │  │      ││
+│  │  - MQTT sub  │  │              │  │      ││
+│  │  - Artifact  │  │  - HTTPS     │  │      ││
+│  │    writer    │  │  - Reverb WS │  │      ││
+│  └──────┬───────┘  └──────┬───────┘  └──┬───┘│
+│         │   REST/WS       │              │    │
+│         └─────────────────┴──────────────┘    │
+│                          │                     │
+│              /var/xentient/artifacts/          │
+└──────────────────────────┬─────────────────────┘
+                           │ cloudflared tunnel
+                           ▼
+                    https://xentient.example.app
+                           │
+                           ▼
+                  Browser  /  ESP32 (LAN MQTT)
 ```
 
-**Key constraint:** The Web Control Panel must not block the MQTT/voice pipeline event loop. It runs in a separate worker or uses non-blocking I/O. The Runtime daemon's real-time guarantees (audio streaming, MQTT bridging) take priority over any web request.
+### Platform (post-demo): VPS + Local Sync
+
+```
+┌──────────────────┐ artifact sync ┌──────────────────┐
+│  Local PC        │◄────────────►│  VPS              │
+│  (workspace)     │               │                  │
+│  Core (optional) │               │  Core (always-on)│
+│  Local Brain     │               │  Web Console     │
+│                  │               │  VPS Brain       │
+└──────────────────┘               └──────────────────┘
+```
+
+### Key Constraints
+
+- **Process isolation:** Core's voice/MQTT event loop must never be blocked by web requests. Since Web is a *separate process*, this is naturally enforced.
+- **Auth boundary:** Web speaks a **public** REST/WS to Core. Even when co-hosted, treat the contract as if it crossed a network. Auth tokens, not shared memory.
+- **Artifact access:** Web should never `fopen()` artifact files directly. It always asks Core via REST for a signed URL or streamed read.
 
 ---
 
@@ -164,21 +180,61 @@ Pushes real-time telemetry events:
 
 ---
 
-## Tech Stack Note
+## Tech Stack (LOCKED)
 
-No framework is locked in yet. The decision is deferred to P6 planning. The constraint:
+| Layer | Choice | Why |
+|---|---|---|
+| Backend framework | **Laravel 12** (PHP 8.2) | Operator already deeply fluent (Flexiqueue); native auth/RBAC/Eloquent/queues/migrations |
+| UI / interactivity | **Livewire 3** | Server-render reactive components — right fit for control-panel CRUD |
+| Real-time | **Laravel Reverb** + **Echo** | First-party WebSocket server; pairs natively with Livewire/Echo for live telemetry |
+| MQTT client (PHP) | **php-mqtt/client** | For demo, Web publishes `mode_set` / control messages directly to Mosquitto |
+| Frontend bundling | **Vite** (Laravel default) | Standard |
+| Charts (T2 telemetry) | **ApexCharts** or **Chart.js** (CDN) | Avoid heavy JS framework — these render fine in Livewire/Alpine |
+| DB | **SQLite** (demo) → **MySQL/Postgres** (platform) | SQLite is zero-config for demo and Laragon-friendly |
+| Tunnel | **cloudflared** (or ngrok) | Expose local Laravel + Reverb URL during demo |
 
-> Must run alongside the Runtime daemon on the same host **without blocking MQTT/voice pipeline event loop.**
+The Core process is a separate, language-free decision (Node.js or Python — see VISION.md Storage Model section). The Web stack does not constrain Core's stack because they only share **wire protocols**, not code.
 
-Candidates: Fastify (Node.js), Hono (lightweight), or a separate process with shared state via IPC. The key requirement is that the web server's event loop must never starve the Runtime daemon's real-time tasks.
+**Why not Fastify/Hono/SvelteKit:** they were the assumption when Web was "Face B of Core." Now that Web is a separate process and the operator's strongest stack is Laravel, the Laravel/Livewire choice gives us auth/CRUD/migrations/queues for free and matches academic-rubric expectations.
 
 ---
 
-## Demo Scope
+## Demo Cut (Apr 24 — minimum viable Web Console)
 
-The Web Control Panel does **NOT** ship in the Apr 24 demo (per D17 in CONTEXT.md). The demo is controlled via MQTT commands (`mosquitto_pub`) and direct configuration file edits. This spec documents the post-demo target.
+The Web Console **does ship in the Apr 24 demo**, but in a deliberately minimum form. (This supersedes the prior "no web in demo" stance.)
 
-After demo, the Web Control Panel becomes the primary human interface for managing Xentient — replacing manual MQTT commands and JSON file edits with a browser-based UI.
+### In Scope
+
+- Single-operator Laravel app, no auth (or hardcoded `.env` password)
+- Pages:
+  - `/` — Dashboard: per-Node-Base card showing current mode, online/offline, last sensor reading, last interaction summary
+  - `/sessions` — Session feed: chronological list of recorded interactions, each with timestamp / transcript / response / ▶ playback
+  - `/telemetry` — Live charts (T2): RMS sparkline, BME280 temp/humidity sparklines, PIR event ticker — fed by Reverb WebSocket
+- Controls:
+  - Mode switch buttons per Node Base (`sleep` / `listen` / `active` / `record`) — published as MQTT `mode_set` directly via php-mqtt/client
+  - "Run pipeline now" web-button trigger (publishes a synthetic `trigger_pipeline` MQTT message — fallback if mic unreliable)
+- Artifact storage: read from local disk path resolved by Core (or directly from agreed shared path for demo simplification)
+- Hosted on operator PC (Laragon), exposed via cloudflared tunnel
+
+### Out of Scope (deferred to Platform Track P6)
+
+- Pack management, pack upload, hot-reload UI
+- Space CRUD (spaces pre-seeded in `config/spaces.php`)
+- Permission/integration toggles (no Hermes/OpenClaw/Archon integrations exist yet)
+- Audit log
+- Multi-user auth, RBAC
+- Brain-adapter UIs (Hermes chat, Archon workflows, OpenClaw viewer)
+- True interactive chat with brain (the Sessions page is a *feed* that *looks* chat-shaped, not a live chat surface)
+- VPS deployment, artifact sync between local and VPS
+
+### Post-Demo Direction
+
+After demo, the Web Console becomes the primary human interface:
+- Replace direct MQTT publishing from Laravel with Core REST API calls (so Core can validate, audit, gate by Space permissions)
+- Add brain-adapter panels as integrations come online (P1 Hermes → P2 Mem0 → P5 packs UI → P8 OpenClaw → P9 Archon)
+- Migrate from SQLite to MySQL/Postgres
+- Add multi-user auth + RBAC
+- Deploy to VPS with bidirectional artifact sync to local PC
 
 ---
 

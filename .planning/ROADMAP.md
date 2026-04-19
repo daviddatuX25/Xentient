@@ -10,7 +10,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 |-------|------|--------|
 | 1: Node Base & Comms | ESP32 firmware + MQTT telemetry | Not started |
 | 2: Harness & Intelligence | Voice pipeline + memory (SUPERSEDED by bridge reframe — see note below) | Superseded |
-| 3: Web-Control & Assembly | Dashboard + hardware assembly | Not started |
+| 3: Web Console (Laravel demo cut) & Assembly | Laravel+Livewire+Reverb console (mode switch, session feed, T2 telemetry) on Laragon + cloudflared tunnel; final hardware assembly | Not started |
 | 4: Optimization & Demo Prep | Latency + demo narrative | Not started |
 | 5: Doc Architecture Refactor | Restructure docs to bridge model | In progress |
 
@@ -25,7 +25,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | P3: Mode Manager | sleep/listen/active/record state machine | +60 LOC | None |
 | P4: Space Manager | Space context + MQTT contract + permissions | +100 LOC | P3 |
 | P5: Pack Loader v2 | New handler types, space awareness | +60 LOC | P1, P4 |
-| P6: Web Control Panel (Core Face B) | Browser UI for hardware config, pack/space/permission mgmt, integration toggles, live telemetry | +600 LOC (new surface) | P3, P4, P5 |
+| P6: Web Console (Laravel) — Full | Expand demo Laravel app: replace direct MQTT publishing with Core REST calls; add Pack/Space CRUD, permission/integration toggles, audit log, multi-user auth, brain-adapter panels (Hermes/Archon/OpenClaw), MySQL/Postgres migration, VPS deploy + artifact sync | +0 LOC to Core; ~3K LOC Laravel app | P3 (demo cut), P4, P5 |
 | P7: Communication Bridge | REST/WS/MQTT bridge between Core and AI Brain tier | +100 LOC | P1 |
 | P8: OpenClaw Adapter | Computer-use handler (sandboxed/remote machine) | +60 LOC | P5, P7 |
 | P9: Archon Adapter | Basic YAML DAG workflow delegation | +50 LOC | P5, P7 |
@@ -54,17 +54,22 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 - [ ] 02-01: Orchestrate the voice pipeline (STT→LLM→TTS).
 - [ ] 02-02: Implement SQLite/FTS5 Memory layer with proactive retrieval.
 
-### Phase 3: Web-Control & Hardware Assembly
-**Goal**: Visual management and physical completion of the prototype.
-**Depends on**: Phase 2
+### Phase 3: Web Console (Demo Cut) & Hardware Assembly
+**Goal**: Ship the minimum-viable Laravel + Livewire Web Console plus complete physical assembly.
+**Depends on**: Phase 1 (MQTT contract + telemetry); Phase 2 voice pipeline (carried-forward parts)
 **Requirements**: WEB-01, WEB-02, WEB-03, NODE-03, HW-PHYSICAL
+**Stack note**: SvelteKit was the prior assumption — superseded by Laravel 12 + Livewire 3 + Reverb (see `docs/WEB_CONTROL.md` Tech Stack). Web Console is a **separate process** from Core, hosted on operator PC + cloudflared tunnel for demo.
 **Success Criteria**:
-  1. Web App shows "Online" status for the Node Base.
-  2. Camera frames from Node Camera (UART) are visible in the Web Dashboard.
-  3. Visual flow editor successfully updates the active Harness logic.
-**Plans**: 2 plans
-- [ ] 03-01: Develop SvelteKit Control Dashboard with MQTT/Websocket bridge.
-- [ ] 03-02: Final hardware assembly, ESP-CAM UART link, and power path validation.
+  1. Web Console shows "Online" status + current mode per Node Base.
+  2. Operator can switch modes (sleep/listen/active/record) from the Web Console — published via MQTT `mode_set`.
+  3. Live telemetry (T2): RMS / sensor sparklines update via Reverb WebSocket as the room is active.
+  4. Every voice interaction is recorded as an artifact (audio + transcript on local disk + DB row) and appears as a card in the Sessions feed with ▶ playback.
+  5. Web-button trigger ("Run pipeline now") publishes synthetic trigger MQTT message as fallback to wake word.
+  6. Hardware physically assembled, ESP-CAM UART link operational, power path validated.
+**Plans**: 3 plans
+- [ ] 03-01: Scaffold Laravel + Livewire + Reverb app on Laragon; wire php-mqtt/client; auth-free single-operator pages (Dashboard, Sessions, Telemetry).
+- [ ] 03-02: Implement mode-switch + web-button-trigger via MQTT; Reverb-driven live telemetry charts; Sessions feed reading artifacts from Core's disk path.
+- [ ] 03-03: Final hardware assembly, ESP-CAM UART link, power path validation, cloudflared tunnel verified end-to-end.
 
 ### Phase 4: Optimization & Demo Prep
 **Goal**: Professional polish for the April 24 presentation.

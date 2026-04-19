@@ -61,7 +61,7 @@ Xentient is not the brain. Xentient is the **bridge** between a physical room an
 The architecture is explicitly three-tier:
 
 - **Tier 1 — Hardware:** Node Bases with docked peripherals. Physical sensing and actuation. Dumb by design.
-- **Tier 2 — Core:** The always-on hosted layer. Runs the Runtime daemon and Web Control Panel as two faces of the same system. The Core owns hardware state, which is why it runs live 24/7. The Web Control Panel (Face B) provides hardware config, pack/space/permission management, integration toggles, and live telemetry — all sharing the same codebase and state as the Runtime daemon (Face A).
+- **Tier 2 — Core:** The always-on runtime (Node.js or Python — language TBD, see Storage Model section). Owns hardware state, voice/event pipeline, MQTT bridge, Brain Router, and recording artifacts. Runs 24/7. The **Web Console** is a *separate companion process* (Laravel + Livewire) that is a **client** of Core — it talks to Core over REST/WebSocket and to the MQTT broker directly for control messages. Web and Core can run on the same host or different hosts, locally (PC + tunnel) or on a VPS, and can crash/restart independently. They share data (artifacts, state) but not a process or codebase.
 - **Tier 3 — AI Brain:** Remote/sandboxed services — Hermes, Mem0, OpenClaw, Archon. These are external processes, never embedded in Core. Core connects to them via adapters.
 
 ```
@@ -258,6 +258,138 @@ Control messages:
 - `{v:1, type:"mode_set", mode:"sleep"}` — change operational mode
 - `{v:1, type:"role_set", role:"student"}` — set role within current space
 - `{v:1, type:"integration_enable", name:"openclaw"}` — enable an integration for this space
+
+---
+
+## Event Pipeline (Trigger-Agnostic, Composable)
+
+Xentient's processing model is **not** "voice in, voice out." That is one specialization of a more general pattern:
+
+```
+TRIGGER SOURCE   →   PIPELINE                    →   OUTPUT(S)            →   ARTIFACT STORE
+──────────────       ────────                        ─────────                ──────────────
+PIR motion           STT → LLM → TTS                 speaker reply            audio.wav + transcript
+Wake word            STT → LLM → record              audio file + transcript  + metadata row
+Web button           video + STT → LLM → MD note     markdown summary
+Cron / API (future)  video → vision-LLM → record     video clip
+                     …compose freely                 + push to web feed
+```
+
+### Triggers (Ingress)
+
+A trigger is anything that fires a pipeline. Triggers are interchangeable — the pipeline does not know who fired it.
+
+| Trigger | Source | Demo? | Platform? |
+|---|---|---|---|
+| Wake word ("hey xentient") | Node Base mic | ✅ | ✅ |
+| Web button | Web Console | ✅ (fallback) | ✅ |
+| PIR motion | Node Base sensor | (deferred) | ✅ |
+| Cron / scheduled | Core scheduler | — | ✅ |
+| External API / webhook | Core REST | — | ✅ |
+
+### Pipelines (Processing)
+
+A pipeline is a composition of input modalities, a processor (LLM or specialized model), and one or more outputs. Pipelines are declared per Pack (see `PACKS.md`). Inputs (audio / video / sensor / text), processor (basic-llm / hermes-chat / openclaw / archon), and outputs (TTS / record / write-md / push-web / mqtt-action) are all enum-gated handler types.
+
+### Outputs (Egress)
+
+- TTS speaker reply (in-room)
+- Recording artifact (audio file, video clip, transcript)
+- Markdown note (summarized output, written to Core's filesystem)
+- MQTT action (control another Node Base, e.g. flash LCD)
+- Web feed entry (push to operator's session feed via WebSocket)
+
+---
+
+## Recording Artifacts
+
+Every pipeline run **may** produce an artifact. An artifact is a durable blob (audio.wav, video.mp4, transcript.txt, summary.md) plus a metadata row:
+
+```typescript
+interface Artifact {
+  id: string;            // ULID
+  spaceId: string;
+  triggerSource: string; // "wake-word" | "web-button" | "pir" | ...
+  pipelineKind: string;  // "stt-llm-tts" | "video-llm-record" | ...
+  startedAt: ISO8601;
+  endedAt: ISO8601;
+  files: { kind: "audio"|"video"|"transcript"|"summary"; path: string }[];
+  brainTier: string;     // which integration produced this (basic|hermes|...)
+  status: "complete" | "processing" | "failed";
+}
+```
+
+**Why artifacts matter:** they are the bridge between *real-time* (the room reacts now) and *async brain* (later, Hermes/Archon can run heavy tools — whisper-large transcription, vision-LLM summarization, semantic indexing — over the artifact and push the result back to the operator's web chat). This is what turns Xentient from a smart speaker into a memory-augmented assistant.
+
+The metadata row lives in Core's database. Artifact files live on disk (see Storage Model below).
+
+---
+
+## Storage Model: Local-First, VPS-Sync
+
+Storage location determines what the brain can see. This is a load-bearing decision because brain capability is **scoped by host access**.
+
+### Demo (Apr 24): Local PC + Tunnel
+
+```
+┌────────────────────────────┐
+│  Operator PC (Laragon)     │
+│                            │
+│  ┌──────┐ ┌──────┐ ┌─────┐│
+│  │ Core │ │ Web  │ │ Mosq││
+│  │ Node │ │Larvl │ │uitto││
+│  └──┬───┘ └──┬───┘ └──┬──┘│
+│     └────────┴────────┘   │
+│              │              │
+│   /var/xentient/artifacts/ │
+└──────┬─────────────────────┘
+       │ cloudflared / ngrok tunnel
+       ▼
+   public-https-url ──► browser / ESP32 (LAN)
+```
+
+- **Core, Web, broker, artifact disk all on the operator PC**
+- Tunnel exposes the web URL (and optionally the MQTT broker) for off-LAN access during the panel demo
+- Brain can access local workspace (e.g. read `D:\Projects\...` to summarize meeting notes) because it's running on the same machine
+
+### Platform (post-demo): VPS-Hosted, Locally Synced
+
+```
+┌──────────────────┐  bidirectional sync  ┌──────────────────┐
+│  Local PC        │◄──────────────────► │  VPS              │
+│  (workspace)     │   (artifacts only)   │                  │
+│                  │                       │  Core + Web      │
+│  Local Brain     │                       │  VPS Brain       │
+│  - reads files   │                       │  - reads VPS     │
+│  - workspace     │                       │    artifacts only│
+│    aware         │                       │  - cloud tools   │
+└──────────────────┘                       └──────────────────┘
+```
+
+- Artifacts are mirrored between local PC and VPS
+- **Two brain instances exist, with different access scopes:**
+  - *Local Brain:* full workspace access — can read project files, generate meeting summaries from local docs, control local apps via OpenClaw
+  - *VPS Brain:* limited to VPS-side artifacts and cloud tools — cannot touch local workspace, but always-on for triggers from anywhere
+- Web Console can connect to either; brain capability tier is announced per host
+
+### Principle
+
+**The brain's reach is bounded by where it runs.** This is a feature, not a limitation — it is how privacy and capability are negotiated. Don't try to make the VPS brain pretend it has local-PC powers; instead, route those tasks to the local brain when the local PC is online.
+
+---
+
+## Two Assistant Surfaces (Voice and Web)
+
+Xentient exposes **two parallel ways to interact** with the same brain state:
+
+| Surface | Where | What it's good for |
+|---|---|---|
+| **Voice** | In the room (mic + speaker) | Conversational, hands-free, ambient |
+| **Web Chat** | Browser session feed | Reviewing past interactions, playback, async chat with brain about past artifacts, triggering pipelines from anywhere |
+
+The web surface is **not** "a transcript viewer." It is a **chat-style feed** where each room interaction appears as a card (timestamp, transcript, response, audio playback ▶, attached summary). The operator can also type messages — the brain responds with full access to past artifacts. Voice and web share the same Mem0/Hermes context: speaking in the room and chatting in the browser are the same conversation from the brain's point of view.
+
+**Demo Apr 24:** the web surface ships as a *session feed* (cards, playback, mode switch buttons). True interactive chat is platform-track work.
 
 ---
 
@@ -471,7 +603,7 @@ This is something no basic chat platform can do — it requires voice + memory +
 | **P3: Mode Manager** | Add `ModeManager.ts` with sleep/listen/active/record state machine. Wire into Pipeline. | +60 LOC | None |
 | **P4: Space Manager** | Add `SpaceManager.ts`, MQTT space contract, space-scoped permissions. | +100 LOC | P3 complete |
 | **P5: Pack Loader v2** | Extend pack loader with new handler types, space awareness. | +60 LOC | P1, P4 complete |
-| **P6: Web Control Panel** | Core's Face B: hardware config UI, sleep state control, pack/space/permission management, integration toggles, live telemetry. Shares codebase with Runtime daemon. | +200 LOC | P4 complete |
+| **P6: Web Console (Laravel)** | **Separate Laravel + Livewire app** (not in Core codebase). Operator console: hardware config, mode/pack/space/permission management, integration toggles, session feed (artifact cards + playback), live telemetry charts. Talks to Core via REST/WS, MQTT broker for control. Local-first deploy, VPS-sync target. | +0 LOC to Core; new ~3K LOC Laravel app | P4 complete |
 | **P7: Communication Bridge** | REST/WS/MQTT bridge between Core and AI Brain tier. Configurable local/cloud. | +100 LOC | P1 complete |
 | **P8: OpenClaw Adapter** | Add `OpenClawAdapter.ts` for computer-use handler. | +60 LOC | P5 complete |
 | **P9: Archon Adapter** | Add `ArchonAdapter.ts` for agent-delegate handler. Basic YAML DAG workflows only. | +50 LOC | P5 complete |
@@ -510,15 +642,47 @@ The core shrinks dramatically because custom memory code drops out (-300 LOC) an
 
 ## Demo Day (Apr 24) — What Ships
 
-**None of the above is implemented before demo.** The current harness ships as-is:
-- Voice pipeline: STT → LLM → TTS streaming
-- MQTT hardware bridge + VAD
-- Memory (MemoryDB + FactExtractor + MemoryInjector) — works for 5-minute demo
-- LCD display (if B7 is green by demo)
-- Pack system: NOT live for demo (post-demo work)
+The demo is **deliberately scoped to one trigger, one pipeline, one output surface, plus a thin web console** — every piece maps directly onto the platform vision so nothing gets thrown away.
 
-**Demo narrative addition (post-reframe awareness):**
-> "Xentient today is a voice-first IoT assistant with basic memory. After demo, it becomes a terminal — any AI brain can plug into this body. Hermes gives it full intelligence. Mem0 gives it persistent memory that doesn't rot. OpenClaw gives it computer use. The core goes from 600 to 930 lines, but the capability jumps from a chatbot to a room-scale intelligence platform."
+### Demo Scope (locked)
+
+**Hardware (Tier 1):**
+- Node Base (ESP32) with mic (INMP441), speaker (MAX98357A + 3W), LCD (PCF8574), at minimum one sensor (BME280 / PIR)
+- MQTT publish to local Mosquitto broker
+
+**Core (Tier 2 runtime):**
+- MQTT bridge (Mosquitto + thin Core process — Node.js or Python)
+- Voice pipeline: STT → LLM → TTS streaming
+- Recording: every interaction saves `audio.wav + transcript.txt` to local disk + metadata row
+- Mode state machine (sleep / listen / active / record)
+- Basic LLM mode only — Hermes/Mem0/OpenClaw/Archon are **post-demo**
+
+**Web Console (Laravel + Livewire — runs on operator PC, exposed via tunnel):**
+- Mode switch buttons per Node Base (sleep / listen / active / record) — published to MQTT
+- Live telemetry view (T2 — sparklines of RMS, sensor readings via WebSocket)
+- Session feed — every recorded interaction appears as a card (timestamp, transcript, response, ▶ playback)
+- Web-button trigger ("Run pipeline now") as fallback to wake word
+- No auth (single-operator demo) or hardcoded `.env` password
+- Local PC + cloudflared/ngrok tunnel for off-LAN demo URL
+
+**Triggers (demo):**
+- Wake word "hey xentient" (primary)
+- Web button (fallback if mic is unreliable on stage)
+
+**NOT in demo (deferred to Platform Track):**
+- Hermes / Mem0 / OpenClaw / Archon adapters
+- Pack hot-reload UI
+- Pack/Space CRUD (spaces pre-seeded in config)
+- Permission/integration toggles
+- Audit log
+- Multi-user auth
+- VPS deployment + sync (local PC + tunnel only)
+- Async brain re-processing of artifacts (the *plumbing* exists — the artifact is saved — but no brain reads it back yet)
+- Brain-adapter web panels (Hermes chat, Archon workflows)
+
+### Demo Narrative (60-second pitch)
+
+> "Xentient is a hardware bridge between a physical room and any AI brain. Today you'll see the body in action — the operator triggers it by voice or by clicking in the web console, the room responds in real-time, and every interaction is saved as an artifact. The web console shows the live state and a feed of past interactions. After the capstone, those artifacts get fed to Hermes and Mem0 — the same body, with a much bigger brain plugged in. The body never changes. The brain is swappable."
 
 ---
 
