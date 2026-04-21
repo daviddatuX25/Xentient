@@ -54,6 +54,25 @@ static constexpr const char* TOPIC_DISPLAY  = "xentient/display";          // di
 static constexpr const char* TOPIC_AUDIO_IN  = "xentient/audio/in";  // Node Base → Harness PCM
 static constexpr const char* TOPIC_AUDIO_OUT = "xentient/audio/out"; // Harness → Node Base TTS
 
+// --- Camera MQTT topics (mirrors MQTT_TOPICS in contracts.ts) ---
+static constexpr const char* TOPIC_CAMERA_REQUEST = "xentient/camera/request"; // Node ↔ Harness camera request
+static constexpr const char* TOPIC_CAMERA_STATUS  = "xentient/camera/status";  // Camera readiness / error
+
+// --- Camera UART frame constants (mirrors contracts.ts) ---
+static constexpr uint8_t UART_SYNC_BYTE_1  = 0xAA;  // UART frame sync byte 1
+static constexpr uint8_t UART_SYNC_BYTE_2  = 0x55;  // UART frame sync byte 2
+static constexpr uint8_t UART_CRC8_POLY    = 0x07;  // CRC-8/ITU polynomial
+
+// --- WS binary prefix bytes (shared AudioServer port discriminator) ---
+static constexpr uint8_t CAMERA_WS_PREFIX = 0xCA;  // Camera JPEG frame prefix
+static constexpr uint8_t AUDIO_WS_PREFIX  = 0xA0;  // Audio PCM chunk prefix (0xAU in spec notation)
+
+// --- Camera frame constraints ---
+static constexpr uint16_t FRAME_ID_MAX      = 65535;  // uint16 wrap
+static constexpr uint8_t  UART_CHUNK_MAX_PAYLOAD = 200; // max chunk payload bytes
+static constexpr uint32_t CAM_TIMER_INTERVAL_MS  = 3000;  // push every 3s
+static constexpr uint32_t CAM_REASSEMBLY_TIMEOUT_MS = 5000; // discard partial frame after 5s
+
 // --- MQTT constraints (per CONTRACTS.md Payload Cap) ---
 static constexpr size_t   MQTT_PAYLOAD_CAP   = 3072;  // 3KB hard limit
 static constexpr uint8_t  MQTT_RETRY_MAX     = 3;     // exponential: 1s, 2s, 4s
