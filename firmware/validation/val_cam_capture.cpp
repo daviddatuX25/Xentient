@@ -6,6 +6,7 @@
  * Monitor:    pio device monitor -e val_cam_capture
  */
 
+#include <Arduino.h>
 #include "esp_camera.h"
 
 // ESP32-CAM AI-Thinker pin mapping
@@ -62,7 +63,7 @@ void setup() {
     config.pixel_format  = PIXFORMAT_JPEG;
     config.frame_size    = FRAMESIZE_QQVGA;   // 160x120
     config.jpeg_quality  = 10;
-    config.fb_location   = CAMERA_PS_RAM;      // Use PSRAM for frame buffer
+    config.fb_location   = CAMERA_FB_IN_PSRAM; // Use PSRAM for frame buffer
     config.fb_count      = 1;
 
     // PSRAM available: 2 frame buffers for better throughput
