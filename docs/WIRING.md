@@ -79,8 +79,8 @@ flowchart LR
 | I2S DIN (mic)   | GPIO35    | in        | INMP441 SD              | ✅ VALIDATED 2026-04-20 — left ch, >>16 shift, peak ~2200 loud |
 | I2S DOUT (amp)  | GPIO27    | out       | MAX98357 DIN            | ✅ resolved (was GPIO22 conflict) |
 | PIR interrupt   | GPIO13    | in        | PIR OUT                 | ⏳ not yet tested |
-| CAM UART TX     | GPIO17    | out       | ESP32-CAM RX            | ✅ UART2 — clean, no USB-serial conflict |
-| CAM UART RX     | GPIO16    | in        | ESP32-CAM TX            | ✅ UART2 — pending breadboard test (02i) |
+| CAM UART TX     | GPIO17    | out       | ESP32-CAM RX (GPIO3)    | ✅ VALIDATED 2026-04-21 — PONG RTT=1ms |
+| CAM UART RX     | GPIO16    | in        | ESP32-CAM TX (GPIO1)    | ✅ VALIDATED 2026-04-21 — PONG RTT=1ms |
 | LCD             | shared    | -         | I2C bus                 | ✅     |
 
 ### Open pin questions
@@ -218,3 +218,4 @@ Each step → tick the box and update the affected section above with the actual
 - 2026-04-19 — Replaced generic JST pinout tables with per-module wiring tables showing actual soldered wire colors (Climate, Speak) and recommended standard colors (Listen, Motion, Sight, LCD). Flagged Speak DIN wire as not yet soldered.
 - 2026-04-20 — 1xi VALIDATION PASS: I2C scanner confirmed LCD 0x27 + BME280 0x76. I2S mic read confirmed INMP441 on left channel (L/R=GND), >>16 shift correct. Calibrated: silence ~0.001 RMS / ~50 peak, normal speech ~0.02 RMS / ~1600 peak, loud/near ~0.04 RMS / ~2200 peak. VAD thresholds 1000/600 confirmed appropriate. Marked PIR as not yet tested.
 - 2026-04-21 — UART2 decision locked: CAM uses GPIO17 (TX) / GPIO16 (RX). UART0 avoided to keep USB-serial debug live. Updated §3 GPIO map, §6 Sight table, §7 step 5. Added cam_uart validation sketch.
+- 2026-04-21 — 02i VALIDATION PASS: UART2 link confirmed. Node Base GPIO16/17 ↔ ESP32-CAM GPIO1/3. PING/PONG RTT=1ms, 0% loss after CAM boot. ESP32-CAM MB used (direct USB, no FTDI).
