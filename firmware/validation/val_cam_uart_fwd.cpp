@@ -32,10 +32,14 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-// --- UART2 to Node Base (ESP32-CAM MB GPIO1/3 ↔ Node Base GPIO16/17) ---
+// --- UART2 to Node Base ---
+// GPIO1/3 are shared with UART0 (USB serial) — can't use both simultaneously.
+// Use GPIO2 (TX) and GPIO12 (RX) for UART2 instead.
+// Wiring: ESP-CAM GPIO2 → Node Base GPIO16 (RX)
+//         ESP-CAM GPIO12 ← Node Base GPIO17 (TX)
 #define CAM_UART_NUM      2
-#define CAM_TX_PIN         1
-#define CAM_RX_PIN         3
+#define CAM_TX_PIN         2
+#define CAM_RX_PIN         12
 #define CAM_BAUD           115200
 
 // --- Wire contract constants (CONTRACTS.md / messages.h) ---
