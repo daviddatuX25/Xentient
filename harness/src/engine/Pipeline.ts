@@ -17,7 +17,7 @@ export interface LatencyReport {
   sttMs: number;          // STT transcription
   memoryMs: number;       // Memory context retrieval
   llmFirstTokenMs: number; // LLM time to first token
-  llmTotalMs: number;    // LLM total generation
+  llmTotalMs: number;    // LLM first token → last audio chunk (includes pipelined TTS)
   ttsFirstChunkMs: number; // TTS time to first audio chunk
   ttsTotalMs: number;    // TTS total synthesis
   audioDeliveryMs: number; // Last audio chunk sent

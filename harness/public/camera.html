@@ -48,7 +48,7 @@
       <div class="text">Camera offline</div>
     </div>
     <img id="feed" style="display:none" alt="Camera feed">
-    <div class="latency-badge" id="latency"></div>
+    <div class="latency-badge" id="frame-info"></div>
   </div>
   <div class="camera-hud">
     <div class="status">
@@ -73,7 +73,7 @@ const dot = document.getElementById('dot');
 const statusText = document.getElementById('status-text');
 const frameCount = document.getElementById('frame-count');
 const lastTime = document.getElementById('last-time');
-const latencyBadge = document.getElementById('latency');
+const frameInfo = document.getElementById('frame-info');
 
 let ws = null;
 let frameTotal = 0;
@@ -118,15 +118,16 @@ function handleFrame(buf) {
   const url = URL.createObjectURL(blob);
 
   if (feed.src && feed.src.startsWith('blob:')) URL.revokeObjectURL(feed.src);
+
+  feed.onload = () => goOnline();
+  feed.onerror = () => { URL.revokeObjectURL(url); };
   feed.src = url;
 
   frameTotal++;
   frameCount.textContent = frameTotal;
   lastTime.textContent = new Date().toLocaleTimeString();
 
-  latencyBadge.textContent = `${(jpegLen / 1024).toFixed(1)}KB #${frameId}`;
-
-  goOnline();
+  frameInfo.textContent = `${(jpegLen / 1024).toFixed(1)}KB #${frameId}`;
 }
 
 function connect() {
