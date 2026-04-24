@@ -308,3 +308,43 @@ module usb_c_cutout_negative() {
                         cube([USB_H, USB_W, 0.1], center=true);
                 }
 }
+
+// ==========================================
+// 8. ZONE B: MASTER BOARD STANDOFFS (Z=20)
+// ==========================================
+
+module master_board_standoffs() {
+    // 4x M3 standoffs for 120x80mm solder board
+    // Board sits at Z=20, standoffs rise from floor
+    so_h = 20.0;  // Floor-to-board-top height
+    for (sx = [-1, 1], sy = [-1, 1]) {
+        translate([sx * Board_SoX/2, sy * Board_SoY/2, 0])
+            difference() {
+                cylinder(h=so_h, d=M3_Boss, $fn=32);
+                translate([0, 0, so_h * 0.35])
+                    cylinder(h=so_h * 0.65 + 1, d=M3_Insert, $fn=32);
+            }
+    }
+}
+
+// ==========================================
+// 9. ZONE C: ESP32 STANDOFFS (Z=45)
+// ==========================================
+
+module esp32_standoffs() {
+    // 4x M2 standoffs for ESP32-WROOM-32
+    // Board floats above master board at Z=45
+    so_h = 20.0;  // Standoff height from Z=45 base
+    for (sx = [-1, 1], sy = [-1, 1]) {
+        translate([sx * ESP_SoX/2, sy * ESP_SoY/2, 0])
+            difference() {
+                cylinder(h=so_h, d=M2_Boss, $fn=32);
+                translate([0, 0, so_h * 0.3])
+                    cylinder(h=so_h * 0.7 + 1, d=M2_Hole, $fn=32);
+            }
+    }
+
+    // Anti-rotation nub
+    translate([ESP_SoX/2 + 2, -3, 0])
+        cube([2, 6, 3]);
+}
