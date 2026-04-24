@@ -56,16 +56,18 @@ export class BrainRouter {
     memoryContext?: MemoryContext,
   ): Promise<BrainResponse> {
     const messages = [];
-    if (memoryContext?.system) {
-      messages.push({ role: "system" as const, content: memoryContext.system });
+    if (memoryContext?.userProfile) {
+      messages.push({ role: "system" as const, content: memoryContext.userProfile });
     }
-    if (memoryContext?.facts?.length) {
-      const factsBlock = memoryContext.facts.join("\n");
-      messages.push({ role: "system" as const, content: `Relevant context:\n${factsBlock}` });
+    if (memoryContext?.relevantEpisodes) {
+      messages.push({ role: "system" as const, content: `Relevant context:\n${memoryContext.relevantEpisodes}` });
+    }
+    if (memoryContext?.extractedFacts) {
+      messages.push({ role: "system" as const, content: `Facts:\n${memoryContext.extractedFacts}` });
     }
     messages.push({ role: "user" as const, content: userMessage });
 
-    const tokenStream = this.llm.complete(messages, memoryContext ?? { system: "", facts: [] });
+    const tokenStream = this.llm.complete(messages, memoryContext ?? { userProfile: "", relevantEpisodes: "", extractedFacts: "" });
 
     let text = "";
     for await (const token of tokenStream) {

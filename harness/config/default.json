@@ -28,5 +28,9 @@
   "pipeline": {
     "factExtractMinWords": 5,
     "factExtractDebounceMs": 10000
+  },
+  "camera": {
+    "wsPort": 8081,
+    "idleTimeoutMs": 10000
   }
 }

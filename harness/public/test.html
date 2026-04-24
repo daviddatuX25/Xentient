@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xentient Test Console</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 13px; }
+
+  .layout { display: grid; grid-template-columns: 280px 1fr 300px; grid-template-rows: auto 1fr auto; height: 100vh; gap: 1px; background: #21262d; }
+
+  /* Header */
+  .header { grid-column: 1 / -1; background: #161b22; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 14px; color: #58a6ff; }
+  .header .status { display: flex; gap: 16px; align-items: center; }
+  .header .conn { display: flex; align-items: center; gap: 6px; }
+  .header .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.on { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+  .dot.off { background: #484f58; }
+
+  /* Left Panel — Controls */
+  .panel-left { grid-row: 2; background: #0d1117; padding: 12px; overflow-y: auto; border-right: 1px solid #30363d; }
+  .section { margin-bottom: 16px; }
+  .section-title { color: #8b949e; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
+
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 12px; cursor: pointer; transition: background 0.15s; }
+  button:hover { background: #30363d; }
+  button:active { background: #484f58; }
+  button.primary { background: #238636; border-color: #2ea043; color: #fff; }
+  button.primary:hover { background: #2ea043; }
+  button.danger { background: #da3633; border-color: #f85149; color: #fff; }
+  button.danger:hover { background: #f85149; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .mode-indicator { margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: #161b22; border: 1px solid #30363d; text-align: center; }
+  .mode-indicator .mode-name { font-size: 18px; font-weight: bold; }
+  .mode-sleep .mode-name { color: #484f58; }
+  .mode-listen .mode-name { color: #58a6ff; }
+  .mode-active .mode-name { color: #3fb950; }
+  .mode-record .mode-name { color: #f0883e; }
+
+  .mic-status { margin-top: 8px; padding: 6px 10px; border-radius: 4px; background: #161b22; border: 1px solid #30363d; }
+  .mic-status.recording { border-color: #f0883e; background: #1c0a00; }
+
+  /* Center — Transcript */
+  .panel-center { grid-row: 2; background: #0d1117; display: flex; flex-direction: column; overflow: hidden; }
+  .transcript-header { padding: 8px 12px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 11px; color: #8b949e; }
+  .transcript { flex: 1; overflow-y: auto; padding: 12px; }
+  .msg { margin-bottom: 10px; padding: 8px 10px; border-radius: 6px; max-width: 85%; }
+  .msg.user { background: #1a1e24; border: 1px solid #30363d; margin-right: auto; }
+  .msg.ai { background: #0d1f0d; border: 1px solid #1a4a1a; margin-left: auto; }
+  .msg.system { background: #1a1a2e; border: 1px solid #30363d; text-align: center; color: #8b949e; max-width: 100%; font-size: 11px; }
+  .msg .role { font-size: 10px; color: #8b949e; margin-bottom: 2px; }
+  .msg .text { word-wrap: break-word; }
+  .msg .meta { font-size: 10px; color: #484f58; margin-top: 4px; }
+
+  /* Right Panel — Stats & Camera */
+  .panel-right { grid-row: 2; background: #0d1117; padding: 12px; overflow-y: auto; border-left: 1px solid #30363d; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; }
+  .stat-card .label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 18px; font-weight: bold; color: #58a6ff; margin-top: 2px; }
+  .stat-card .value.good { color: #3fb950; }
+  .stat-card .value.warn { color: #f0883e; }
+  .stat-card .value.bad { color: #f85149; }
+
+  .camera-section { margin-top: 12px; }
+  .camera-frame { position: relative; width: 100%; aspect-ratio: 4/3; background: #111; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .camera-frame img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+  .camera-offline { color: #484f58; text-align: center; font-size: 11px; }
+
+  /* Footer — Log */
+  .footer { grid-column: 1 / -1; background: #161b22; border-top: 1px solid #30363d; max-height: 120px; overflow-y: auto; padding: 6px 12px; font-size: 11px; color: #484f58; }
+  .log-line { white-space: pre-wrap; }
+  .log-line.error { color: #f85149; }
+  .log-line.info { color: #58a6ff; }
+  .log-line.warn { color: #f0883e; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="header">
+    <h1>Xentient Test Console</h1>
+    <div class="status">
+      <div class="conn"><div class="dot off" id="ws-dot"></div><span id="ws-status">WS: —</span></div>
+      <div class="conn"><div class="dot off" id="mqtt-dot"></div><span id="mqtt-status">MQTT: —</span></div>
+      <div class="conn"><div class="dot off" id="mic-dot"></div><span id="mic-status">Mic: —</span></div>
+    </div>
+  </div>
+
+  <div class="panel-left">
+    <div class="section">
+      <div class="section-title">Voice Input</div>
+      <div class="btn-row">
+        <button class="primary" id="btn-mic" onclick="toggleMic()">Start Mic</button>
+      </div>
+      <div class="mic-status" id="mic-info">Click Start Mic to begin listening</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">VAD Control</div>
+      <div class="btn-row">
+        <button class="primary" id="btn-vad-start" onclick="vadStart()">VAD Start</button>
+        <button class="danger" id="btn-vad-end" onclick="vadEnd()">VAD End</button>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:#8b949e;">Simulates ESP32 VAD start/end events via MQTT</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Mode Control</div>
+      <div class="btn-row">
+        <button onclick="setMode('sleep')">Sleep</button>
+        <button onclick="setMode('listen')">Listen</button>
+        <button onclick="setMode('active')">Active</button>
+        <button onclick="setMode('record')">Record</button>
+      </div>
+      <div class="mode-indicator mode-sleep" id="mode-box">
+        <div class="mode-name" id="mode-name">SLEEP</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:2px" id="mode-since">—</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Pipeline</div>
+      <div class="btn-row">
+        <button onclick="triggerPipeline('voice')">Trigger (Voice)</button>
+        <button onclick="triggerPipeline('pir')">Trigger (PIR)</button>
+        <button onclick="triggerPipeline('web')">Trigger (Web)</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Quick Actions</div>
+      <div class="btn-row">
+        <button onclick="clearTranscript()">Clear Log</button>
+        <button onclick="sendText()">Text Input</button>
+      </div>
+      <input type="text" id="text-input" placeholder="Type a message..." style="width:100%;margin-top:6px;padding:6px 8px;background:#161b22;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-family:inherit;font-size:12px;" onkeydown="if(event.key==='Enter')sendText()">
+    </div>
+  </div>
+
+  <div class="panel-center">
+    <div class="transcript-header">TRANSCRIPT</div>
+    <div class="transcript" id="transcript"></div>
+  </div>
+
+  <div class="panel-right">
+    <div class="section">
+      <div class="section-title">Latency (last turn)</div>
+      <div class="stat-grid" id="latency-stats">
+        <div class="stat-card"><div class="label">Total</div><div class="value" id="lat-total">—</div></div>
+        <div class="stat-card"><div class="label">VAD Buffer</div><div class="value" id="lat-vad">—</div></div>
+        <div class="stat-card"><div class="label">STT</div><div class="value" id="lat-stt">—</div></div>
+        <div class="stat-card"><div class="label">LLM Pipeline</div><div class="value" id="lat-llm">—</div></div>
+        <div class="stat-card"><div class="label">TTS</div><div class="value" id="lat-tts">—</div></div>
+        <div class="stat-card"><div class="label">Audio Del.</div><div class="value" id="lat-audio">—</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Session</div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="label">Turns</div><div class="value" id="turn-count">0</div></div>
+        <div class="stat-card"><div class="label">Pipeline</div><div class="value" id="pipeline-state">idle</div></div>
+      </div>
+    </div>
+
+    <div class="camera-section">
+      <div class="section-title">Camera Feed</div>
+      <div class="camera-frame" id="cam-frame">
+        <div class="camera-offline" id="cam-offline">Camera offline<br>(connect ESP-CAM to enable)</div>
+        <img id="cam-feed" style="display:none" alt="Camera feed">
+      </div>
+    </div>
+  </div>
+
+  <div class="footer" id="log"></div>
+</div>
+
+<script>
+// ─── Config ──────────────────────────────────────────────────────────
+const WS_AUDIO_URL = `ws://${location.hostname}:8080`;
+const WS_CAMERA_URL = `ws://${location.hostname}:8081`;
+const API_BASE = `http://${location.hostname}:3000`;
+const AUDIO_PREFIX = 0xA0;
+const SAMPLE_RATE = 16000;
+
+// ─── State ────────────────────────────────────────────────────────────
+let audioWs = null;
+let cameraWs = null;
+let audioCtx = null;
+let micStream = null;
+let scriptNode = null;
+let isRecording = false;
+let turnCount = 0;
+let ttsQueue = [];
+let isPlaying = false;
+
+// ─── DOM refs ─────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+// ─── Logging ──────────────────────────────────────────────────────────
+function log(msg, level = '') {
+  const div = document.createElement('div');
+  div.className = `log-line ${level}`;
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  $('log').appendChild(div);
+  $('log').scrollTop = $('log').scrollHeight;
+  if ($('log').children.length > 200) $('log').firstChild.remove();
+}
+
+// ─── Transcript ───────────────────────────────────────────────────────
+function addMessage(role, text, meta = '') {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `<div class="role">${role.toUpperCase()}</div><div class="text">${escapeHtml(text)}</div>${meta ? `<div class="meta">${meta}</div>` : ''}`;
+  $('transcript').appendChild(div);
+  $('transcript').scrollTop = $('transcript').scrollHeight;
+}
+
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function clearTranscript() { $('transcript').innerHTML = ''; }
+
+// ─── API calls (ControlServer endpoints) ──────────────────────────────
+async function apiPost(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return await res.json();
+  } catch (e) { log(`API error: ${e.message}`, 'error'); }
+}
+
+function vadStart() { apiPost('/api/vad', { type: 'start', nodeId: 'test-browser' }); }
+function vadEnd()   { apiPost('/api/vad', { type: 'end',   nodeId: 'test-browser' }); }
+function setMode(m) { apiPost('/api/mode', { mode: m }); }
+function triggerPipeline(source) { apiPost('/api/trigger', { source }); }
+
+// ─── Text Input (bypasses STT) ────────────────────────────────────────
+function sendText() {
+  const input = $('text-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMessage('user', text);
+  apiPost('/api/text', { text });
+}
+
+// ─── Audio WebSocket ──────────────────────────────────────────────────
+function connectAudioWs() {
+  audioWs = new WebSocket(WS_AUDIO_URL);
+  audioWs.binaryType = 'arraybuffer';
+
+  audioWs.onopen = () => {
+    $('ws-dot').className = 'dot on';
+    $('ws-status').textContent = 'WS: connected';
+    log('Audio WS connected', 'info');
+  };
+
+  audioWs.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      // TTS audio back from harness — queue for playback
+      ttsQueue.push(e.data);
+      playNext();
+    } else if (typeof e.data === 'string') {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'transcript') addMessage('user', msg.text);
+        if (msg.type === 'pipeline_state') updatePipelineState(msg.state);
+      } catch {}
+    }
+  };
+
+  audioWs.onclose = () => {
+    $('ws-dot').className = 'dot off';
+    $('ws-status').textContent = 'WS: disconnected';
+    log('Audio WS disconnected', 'warn');
+    setTimeout(connectAudioWs, 3000);
+  };
+
+  audioWs.onerror = () => { audioWs.close(); };
+}
+
+// ─── TTS Audio Playback ──────────────────────────────────────────────
+function playNext() {
+  if (isPlaying || ttsQueue.length === 0) return;
+  isPlaying = true;
+
+  const pcmData = ttsQueue.shift();
+  const int16 = new Int16Array(pcmData);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+  if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 16000 });
+  const buffer = audioCtx.createBuffer(1, float32.length, 16000);
+  buffer.getChannelData(0).set(float32);
+
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.onended = () => { isPlaying = false; playNext(); };
+  source.start();
+}
+
+// ─── Microphone Capture ───────────────────────────────────────────────
+async function toggleMic() {
+  if (isRecording) {
+    stopMic();
+  } else {
+    await startMic();
+  }
+}
+
+async function startMic() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
+
+    if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 16000 });
+    const source = audioCtx.createMediaStreamSource(micStream);
+
+    // ScriptProcessorNode for raw PCM capture (deprecated but universally supported)
+    scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
+    scriptNode.onaudioprocess = (e) => {
+      if (!isRecording || !audioWs || audioWs.readyState !== WebSocket.OPEN) return;
+
+      const float32 = e.inputBuffer.getChannelData(0);
+      // Convert Float32 [-1,1] → Int16 PCM
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+
+      // Prefix with 0xA0 byte per CONTRACTS.md
+      const prefix = new Uint8Array([AUDIO_PREFIX]);
+      const combined = new Uint8Array(prefix.length + int16.buffer.byteLength);
+      combined.set(prefix, 0);
+      combined.set(new Uint8Array(int16.buffer), prefix.length);
+      audioWs.send(combined.buffer);
+    };
+
+    source.connect(scriptNode);
+    scriptNode.connect(audioCtx.destination); // Must connect to destination for process to fire
+
+    isRecording = true;
+    $('btn-mic').textContent = 'Stop Mic';
+    $('btn-mic').className = 'danger';
+    $('mic-dot').className = 'dot on';
+    $('mic-status').textContent = 'Recording...';
+    $('mic-info').textContent = 'Microphone active — audio streaming to harness';
+    $('mic-info').parentElement.className = 'mic-status recording';
+    log('Microphone started', 'info');
+  } catch (e) {
+    log(`Mic error: ${e.message}`, 'error');
+    $('mic-info').textContent = `Error: ${e.message}`;
+  }
+}
+
+function stopMic() {
+  isRecording = false;
+  if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  $('btn-mic').textContent = 'Start Mic';
+  $('btn-mic').className = 'primary';
+  $('mic-dot').className = 'dot off';
+  $('mic-status').textContent = 'Mic off';
+  $('mic-info').textContent = 'Click Start Mic to begin listening';
+  $('mic-info').parentElement.className = 'mic-status';
+  log('Microphone stopped', 'info');
+}
+
+// ─── Camera WebSocket ─────────────────────────────────────────────────
+function connectCameraWs() {
+  cameraWs = new WebSocket(WS_CAMERA_URL);
+  cameraWs.binaryType = 'arraybuffer';
+
+  cameraWs.onopen = () => { log('Camera WS connected', 'info'); };
+
+  cameraWs.onmessage = (e) => {
+    if (!(e.data instanceof ArrayBuffer)) return;
+    const buf = e.data;
+    const view = new DataView(buf);
+    if (buf.byteLength < 7 || view.getUint8(0) !== 0xCA) return;
+
+    const frameId = view.getUint16(1, true);
+    const size = view.getUint32(3, true);
+    const jpegLen = buf.byteLength - 7;
+    if (jpegLen !== size) return;
+    if (jpegLen < 2 || view.getUint8(7) !== 0xFF || view.getUint8(8) !== 0xD8) return;
+
+    const jpeg = buf.slice(7);
+    const blob = new Blob([jpeg], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    const feed = $('cam-feed');
+    if (feed.src && feed.src.startsWith('blob:')) URL.revokeObjectURL(feed.src);
+    feed.onload = () => {
+      $('cam-offline').style.display = 'none';
+      feed.style.display = '';
+    };
+    feed.onerror = () => { URL.revokeObjectURL(url); };
+    feed.src = url;
+  };
+
+  cameraWs.onclose = () => { setTimeout(connectCameraWs, 3000); };
+  cameraWs.onerror = () => { cameraWs.close(); };
+}
+
+// ─── SSE for server-pushed events ─────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource(`${API_BASE}/api/events`);
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      handleServerEvent(data);
+    } catch {}
+  };
+  es.onerror = () => { log('SSE disconnected, retrying...', 'warn'); };
+}
+
+function handleServerEvent(data) {
+  switch (data.type) {
+    case 'transcript':
+      addMessage('user', data.text);
+      break;
+    case 'ai_response':
+      addMessage('ai', data.text, `${data.durationMs || ''}ms`);
+      break;
+    case 'latency':
+      updateLatency(data);
+      break;
+    case 'mode_status':
+      updateMode(data.mode);
+      break;
+    case 'pipeline_state':
+      updatePipelineState(data.state);
+      break;
+    case 'session_complete':
+      turnCount++;
+      $('turn-count').textContent = turnCount;
+      log('Session complete', 'info');
+      break;
+    case 'session_error':
+      addMessage('system', `Error: ${data.message}`);
+      log(`Session error: ${data.message}`, 'error');
+      break;
+  }
+}
+
+// ─── UI Updates ────────────────────────────────────────────────────────
+function updateLatency(r) {
+  $('lat-total').textContent = r.totalMs ? `${r.totalMs}ms` : '—';
+  $('lat-vad').textContent = r.vadBufferMs ? `${r.vadBufferMs}ms` : '—';
+  $('lat-stt').textContent = r.sttMs ? `${r.sttMs}ms` : '—';
+  $('lat-llm').textContent = r.llmTotalMs ? `${r.llmTotalMs}ms` : '—';
+  $('lat-tts').textContent = r.ttsTotalMs ? `${r.ttsTotalMs}ms` : '—';
+  $('lat-audio').textContent = r.audioDeliveryMs ? `${r.audioDeliveryMs}ms` : '—';
+
+  // Color coding
+  const total = r.totalMs || 9999;
+  $('lat-total').className = `value ${total < 2000 ? 'good' : total < 4000 ? 'warn' : 'bad'}`;
+}
+
+function updateMode(mode) {
+  $('mode-name').textContent = mode.toUpperCase();
+  $('mode-box').className = `mode-indicator mode-${mode}`;
+  $('mode-since').textContent = new Date().toLocaleTimeString();
+  $('mqtt-dot').className = 'dot on';
+  $('mqtt-status').textContent = `MQTT: ${mode}`;
+}
+
+function updatePipelineState(state) {
+  $('pipeline-state').textContent = state;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────
+log('Xentient Test Console starting...', 'info');
+connectAudioWs();
+connectCameraWs();
+connectSSE();
+log('Connect to harness at ' + API_BASE + ' — make sure harness is running and MQTT broker is up', 'info');
+</script>
+</body>
+</html>

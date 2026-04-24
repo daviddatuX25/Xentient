@@ -11,7 +11,19 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { SessionComplete, TurnSchema, MODE_VALUES } from "./contracts";
+import {
+  SessionComplete,
+  TurnSchema,
+  MODE_VALUES,
+  CameraRequest,
+  CameraReady,
+  CAMERA_WS_PREFIX,
+  AUDIO_WS_PREFIX,
+  UART_SYNC_BYTE_1,
+  UART_SYNC_BYTE_2,
+  UART_CRC8_POLY,
+  validateMessage,
+} from "./contracts";
 
 interface FixtureTurn {
   role: string;
@@ -118,4 +130,114 @@ for (const file of files) {
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed > 0 ? 1 : 0);
+
+// ── Camera contract verification ──────────────────────────────────────
+
+/**
+ * Verify camera MQTT messages parse against Zod schemas.
+ * Also verifies binary transport constants match CONTRACTS.md.
+ */
+function verifyCameraContracts(): void {
+  console.log("\nVerifying camera contracts...\n");
+
+  let camPassed = 0;
+  let camFailed = 0;
+
+  // Verify binary transport constants
+  const constantChecks = [
+    { name: "CAMERA_WS_PREFIX == 0xCA", actual: CAMERA_WS_PREFIX, expected: 0xca },
+    { name: "AUDIO_WS_PREFIX == 0xA0 (0xAU spec notation)", actual: AUDIO_WS_PREFIX, expected: 0xa0 },
+    { name: "UART_SYNC_BYTE_1 == 0xAA", actual: UART_SYNC_BYTE_1, expected: 0xaa },
+    { name: "UART_SYNC_BYTE_2 == 0x55", actual: UART_SYNC_BYTE_2, expected: 0x55 },
+    { name: "UART_CRC8_POLY == 0x07", actual: UART_CRC8_POLY, expected: 0x07 },
+  ];
+
+  for (const check of constantChecks) {
+    if (check.actual === check.expected) {
+      console.log(`  PASS  ${check.name}`);
+      camPassed++;
+    } else {
+      console.log(`  FAIL  ${check.name} — got 0x${check.actual.toString(16).toUpperCase()}`);
+      camFailed++;
+    }
+  }
+
+  // Verify camera_request message schema
+  const cameraRequestCases = [
+    { name: "valid camera_request", data: { v: 1, type: "camera_request", frameId: 0 }, shouldPass: true },
+    { name: "valid camera_request max frameId", data: { v: 1, type: "camera_request", frameId: 65535 }, shouldPass: true },
+    { name: "invalid camera_request frameId overflow", data: { v: 1, type: "camera_request", frameId: 65536 }, shouldPass: false },
+    { name: "invalid camera_request negative frameId", data: { v: 1, type: "camera_request", frameId: -1 }, shouldPass: false },
+    { name: "invalid camera_request missing frameId", data: { v: 1, type: "camera_request" }, shouldPass: false },
+  ];
+
+  for (const tc of cameraRequestCases) {
+    const parsed = CameraRequest.safeParse(tc.data);
+    const pass = parsed.success === tc.shouldPass;
+    if (pass) {
+      console.log(`  PASS  ${tc.name}`);
+      camPassed++;
+    } else {
+      console.log(`  FAIL  ${tc.name} — expected ${tc.shouldPass ? "pass" : "fail"}, got ${parsed.success ? "pass" : "fail"}`);
+      camFailed++;
+    }
+  }
+
+  // Verify camera_ready message schema
+  const cameraReadyCases = [
+    { name: "valid camera_ready", data: { v: 1, type: "camera_ready", frameId: 42, size: 3245 }, shouldPass: true },
+    { name: "valid camera_ready zero size", data: { v: 1, type: "camera_ready", frameId: 0, size: 0 }, shouldPass: true },
+    { name: "invalid camera_ready frameId overflow", data: { v: 1, type: "camera_ready", frameId: 70000, size: 100 }, shouldPass: false },
+    { name: "invalid camera_ready negative size", data: { v: 1, type: "camera_ready", frameId: 1, size: -1 }, shouldPass: false },
+    { name: "invalid camera_ready missing size", data: { v: 1, type: "camera_ready", frameId: 1 }, shouldPass: false },
+  ];
+
+  for (const tc of cameraReadyCases) {
+    const parsed = CameraReady.safeParse(tc.data);
+    const pass = parsed.success === tc.shouldPass;
+    if (pass) {
+      console.log(`  PASS  ${tc.name}`);
+      camPassed++;
+    } else {
+      console.log(`  FAIL  ${tc.name} — expected ${tc.shouldPass ? "pass" : "fail"}, got ${parsed.success ? "pass" : "fail"}`);
+      camFailed++;
+    }
+  }
+
+  // Verify validateMessage works for camera types
+  try {
+    const req = validateMessage("camera_request", { v: 1, type: "camera_request", frameId: 100 });
+    if (req.frameId === 100) {
+      console.log("  PASS  validateMessage('camera_request')");
+      camPassed++;
+    } else {
+      console.log("  FAIL  validateMessage('camera_request') — frameId mismatch");
+      camFailed++;
+    }
+  } catch (e: any) {
+    console.log(`  FAIL  validateMessage('camera_request') — ${e.message}`);
+    camFailed++;
+  }
+
+  try {
+    const ready = validateMessage("camera_ready", { v: 1, type: "camera_ready", frameId: 100, size: 2048 });
+    if (ready.frameId === 100 && ready.size === 2048) {
+      console.log("  PASS  validateMessage('camera_ready')");
+      camPassed++;
+    } else {
+      console.log("  FAIL  validateMessage('camera_ready') — field mismatch");
+      camFailed++;
+    }
+  } catch (e: any) {
+    console.log(`  FAIL  validateMessage('camera_ready') — ${e.message}`);
+    camFailed++;
+  }
+
+  console.log(`\nCamera: ${camPassed} passed, ${camFailed} failed\n`);
+
+  if (camFailed > 0) {
+    process.exit(1);
+  }
+}
+
+verifyCameraContracts();

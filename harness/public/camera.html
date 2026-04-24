@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xentient Camera Feed</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; color: #e0e0e0; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .camera-widget { position: relative; width: 480px; }
+  .camera-frame {
+    position: relative; width: 100%; aspect-ratio: 4/3;
+    background: #111; border: 2px solid #333; border-radius: 8px;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .camera-frame img {
+    width: 100%; height: 100%; object-fit: contain;
+    image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;
+  }
+  .camera-offline {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    color: #666;
+  }
+  .camera-offline .icon { font-size: 48px; }
+  .camera-offline .text { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; }
+  .camera-hud {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 4px; font-size: 11px; color: #888;
+  }
+  .camera-hud .status { display: flex; align-items: center; gap: 6px; }
+  .camera-hud .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.online { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .dot.offline { background: #666; }
+  .camera-hud .stats { display: flex; gap: 16px; }
+  .camera-hud .stat-val { color: #bbb; }
+  .latency-badge {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(0,0,0,0.7); padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; color: #aaa;
+  }
+</style>
+</head>
+<body>
+<div class="camera-widget">
+  <div class="camera-frame" id="frame">
+    <div class="camera-offline" id="offline">
+      <div class="icon">&#x1F4F7;</div>
+      <div class="text">Camera offline</div>
+    </div>
+    <img id="feed" style="display:none" alt="Camera feed">
+    <div class="latency-badge" id="frame-info"></div>
+  </div>
+  <div class="camera-hud">
+    <div class="status">
+      <div class="dot offline" id="dot"></div>
+      <span id="status-text">Connecting...</span>
+    </div>
+    <div class="stats">
+      <span>Frames: <span class="stat-val" id="frame-count">0</span></span>
+      <span>Last: <span class="stat-val" id="last-time">--</span></span>
+    </div>
+  </div>
+</div>
+
+<script>
+const WS_URL = `ws://${location.hostname}:8081`;
+const IDLE_TIMEOUT_MS = 10_000;
+const CAM_PREFIX = 0xCA;
+
+const feed = document.getElementById('feed');
+const offline = document.getElementById('offline');
+const dot = document.getElementById('dot');
+const statusText = document.getElementById('status-text');
+const frameCount = document.getElementById('frame-count');
+const lastTime = document.getElementById('last-time');
+const frameInfo = document.getElementById('frame-info');
+
+let ws = null;
+let frameTotal = 0;
+let idleTimer = null;
+let reconnectDelay = 1000;
+
+function goOffline(reason) {
+  feed.style.display = 'none';
+  offline.style.display = '';
+  dot.className = 'dot offline';
+  statusText.textContent = reason || 'Camera offline';
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+}
+
+function goOnline() {
+  offline.style.display = 'none';
+  feed.style.display = '';
+  dot.className = 'dot online';
+  statusText.textContent = 'Live';
+  resetIdle();
+}
+
+function resetIdle() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => goOffline('No frames (10s)'), IDLE_TIMEOUT_MS);
+}
+
+function handleFrame(buf) {
+  const view = new DataView(buf);
+  if (buf.byteLength < 7 || view.getUint8(0) !== CAM_PREFIX) return;
+
+  const frameId = view.getUint16(1, true);
+  const size = view.getUint32(3, true);
+  const jpegOffset = 7;
+  const jpegLen = buf.byteLength - jpegOffset;
+
+  if (jpegLen !== size) return;
+  if (jpegLen < 2 || view.getUint8(jpegOffset) !== 0xFF || view.getUint8(jpegOffset + 1) !== 0xD8) return;
+
+  const jpeg = buf.slice(jpegOffset);
+  const blob = new Blob([jpeg], { type: 'image/jpeg' });
+  const url = URL.createObjectURL(blob);
+
+  if (feed.src && feed.src.startsWith('blob:')) URL.revokeObjectURL(feed.src);
+
+  feed.onload = () => goOnline();
+  feed.onerror = () => { URL.revokeObjectURL(url); };
+  feed.src = url;
+
+  frameTotal++;
+  frameCount.textContent = frameTotal;
+  lastTime.textContent = new Date().toLocaleTimeString();
+
+  frameInfo.textContent = `${(jpegLen / 1024).toFixed(1)}KB #${frameId}`;
+}
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    statusText.textContent = 'Connected';
+    reconnectDelay = 1000;
+  };
+
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      handleFrame(e.data);
+    }
+  };
+
+  ws.onclose = () => {
+    goOffline('Disconnected');
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  };
+
+  ws.onerror = () => { ws.close(); };
+}
+
+connect();
+</script>
+</body>
+</html>

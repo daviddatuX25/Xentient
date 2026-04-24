@@ -33,8 +33,16 @@ export type Mode = (typeof MODE_VALUES)[number];
 export const MODE_TRANSITIONS: Record<Mode, Mode[]> = {
   sleep: ["listen"],
   listen: ["active", "sleep", "record"],
-  active: ["listen"],
-  record: ["listen"],
+  active: ["listen", "sleep", "record"],
+  record: ["listen", "sleep"],
+};
+
+// ── LCD Face Constants ─────────────────────────────────────────────
+export const LCD_FACES: Record<Mode, { line1: string; line2: string }> = {
+  sleep: { line1: "(_ _) Zzz", line2: "" },
+  listen: { line1: "(O_O)", line2: "listening..." },
+  active: { line1: "(^_^)", line2: "" },
+  record: { line1: "(_ _) REC", line2: "" },
 };
 
 // ── Base Envelope ────────────────────────────────────────────────────
@@ -167,6 +175,56 @@ export const SpaceSwitch = VersionedMessage.extend({
   spaceId: z.string(),
 });
 
+// ── Camera Binary Transport Constants ────────────────────────────────
+// Prefix bytes for WS binary message discriminator (shared AudioServer port)
+export const CAMERA_WS_PREFIX = 0xca as const; // Camera JPEG frame prefix
+export const AUDIO_WS_PREFIX = 0xa0 as const;  // Audio PCM chunk prefix (0xAU in spec notation)
+
+// UART frame constants (ESP32-CAM → Node Base chunked transport)
+export const UART_SYNC_BYTE_1 = 0xaa as const;
+export const UART_SYNC_BYTE_2 = 0x55 as const;
+export const UART_CRC8_POLY = 0x07 as const; // CRC-8/ITU polynomial
+
+// ── Camera MQTT Messages ─────────────────────────────────────────────
+export const CameraRequest = VersionedMessage.extend({
+  type: z.literal("camera_request"),
+  frameId: z.number().int().min(0).max(65535), // uint16 LE
+});
+
+export const CameraReady = VersionedMessage.extend({
+  type: z.literal("camera_ready"),
+  frameId: z.number().int().min(0).max(65535), // uint16 LE — unified with UART
+  size: z.number().int().min(0),                // total JPEG size in bytes
+});
+
+// ── MQTT Topic Map ───────────────────────────────────────────────────
+export const MQTT_TOPICS = {
+  // Audio (binary WS)
+  audioIn: "xentient/audio/in",
+  audioOut: "xentient/audio/out",
+  // Sensors (JSON MQTT)
+  sensorsEnv: "xentient/sensors/env",
+  sensorsMotion: "xentient/sensors/motion",
+  // Display (JSON MQTT)
+  display: "xentient/display",
+  displayFaces: "xentient/display/faces",
+  // Pack control (JSON MQTT)
+  controlPack: "xentient/control/pack",
+  statusPacks: "xentient/status/packs",
+  // Space & mode (JSON MQTT)
+  controlSpace: "xentient/control/space",
+  statusSpace: "xentient/status/space",
+  controlMode: "xentient/control/mode",
+  statusMode: "xentient/status/mode",
+  // Pipeline & session (JSON MQTT)
+  pipelineState: "xentient/pipeline/state",
+  sessionComplete: "xentient/session/complete",
+  sessionError: "xentient/session/error",
+  // Camera (JSON MQTT + binary WS)
+  cameraRequest: "xentient/camera/request",
+  cameraStatus: "xentient/camera/status",
+} as const;
+
 // ── Validation helper ───────────────────────────────────────────────
 const ALL_SCHEMAS = {
   display_update: DisplayUpdate,
@@ -181,6 +239,8 @@ const ALL_SCHEMAS = {
   session_error: SessionError,
   trigger_pipeline: TriggerPipeline,
   space_switch: SpaceSwitch,
+  camera_request: CameraRequest,
+  camera_ready: CameraReady,
 } as const;
 
 export type MessageType = keyof typeof ALL_SCHEMAS;
