@@ -96,3 +96,81 @@ LCD_H       = 26.0;
 LCD_D       = 15.0;
 LCD_Mount_X = 32.0;
 LCD_Mount_Y = 12.0;
+
+// ==========================================
+// 3. SOCKET POCKET NEGATIVE (cuts opening through wall + sleeve)
+// ==========================================
+
+module socket_pocket_negative() {
+    draft_off = Port_D * tan(1.0);  // 1 deg draft
+
+    // Main pocket passage (Port_H is vertical, Port_W is horizontal)
+    hull() {
+        translate([0, 0, 0.5])
+            cube([Port_H + 2*draft_off, Port_W + 2*draft_off, 1], center=true);
+        translate([0, 0, -Port_D + 0.5])
+            cube([Port_H, Port_W, 1], center=true);
+    }
+
+    // Wire pass-through (continues past pocket into cavity)
+    translate([0, 0, -Port_D/2 - 10])
+        cube([WireCh_H, WireCh_W, 20], center=true);
+
+    // 45 deg entry chamfer
+    chamfer_z = 1.5;
+    translate([0, 0, chamfer_z / 2])
+        hull() {
+            cube([Port_H + 2*chamfer_z, Port_W + 2*chamfer_z, 0.1], center=true);
+            cube([Port_H + 2*draft_off, Port_W + 2*draft_off, 0.1], center=true);
+        }
+
+    // Breakout PCB mounting lip recesses (2mm flange, 30x20mm PCB)
+    // Cut screw holes for M2 at corners of 30x20 breakout
+    bp_w = Breakout_W - 4;  // screw span width
+    bp_h = Breakout_H - 4;  // screw span height
+    translate([0, 0, -Port_D])
+        for (sx = [-1, 1], sy = [-1, 1]) {
+            translate([sx * bp_w/2, sy * bp_h/2, 0])
+                cylinder(h=Mounting_Lip + 1, d=M2_Hole, $fn=24);
+        }
+}
+
+// ==========================================
+// 4. SOCKET POCKET SLEEVE (positive: adds pocket depth)
+// ==========================================
+
+module socket_pocket_sleeve() {
+    // Positive boss extending inward from inner wall surface
+    // Creates the 15mm deep recessed pocket for the male sled
+    // Wall swells from 3mm to 15mm only at socket locations
+
+    draft_off = Port_D * tan(1.0);
+
+    difference() {
+        // Outer sleeve body (24.4 + 2*2 = 28.4mm wide, 16.4 + 2*2 = 20.4mm tall)
+        hull() {
+            translate([0, 0, 0.5])
+                cube([Port_H + 2*Sleeve_Wall + 2*draft_off,
+                      Port_W + 2*Sleeve_Wall + 2*draft_off, 1], center=true);
+            translate([0, 0, -Port_D + 0.5])
+                cube([Port_H + 2*Sleeve_Wall, Port_W + 2*Sleeve_Wall, 1], center=true);
+        }
+
+        // Inner passage (matches pocket opening with draft)
+        hull() {
+            translate([0, 0, 0.5])
+                cube([Port_H + 2*draft_off, Port_W + 2*draft_off, 1], center=true);
+            translate([0, 0, -Port_D + 0.5])
+                cube([Port_H, Port_W, 1], center=true);
+        }
+
+        // Wire channel opening at the back of the sleeve
+        translate([0, 0, -Port_D])
+            cube([WireCh_H, WireCh_W, 4], center=true);
+
+        // Breakout PCB mounting lip (2mm flange recess)
+        // This creates a shelf for the 30x20 JST-breakout PCB
+        translate([0, 0, -Port_D + Mounting_Lip/2])
+            cube([Breakout_W, Breakout_H, Mounting_Lip], center=true);
+    }
+}
