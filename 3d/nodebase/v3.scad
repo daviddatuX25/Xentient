@@ -348,3 +348,41 @@ module esp32_standoffs() {
     translate([ESP_SoX/2 + 2, -3, 0])
         cube([2, 6, 3]);
 }
+
+// ==========================================
+// 10. VENTILATION (Thermal Gills)
+// ==========================================
+
+module ventilation_negative() {
+    // Slits on faces between sensor ports
+    // Centered at Collar_H/2, through wall, 45 deg chamfered
+    for (i = [0 : Vent_N - 1]) {
+        y_off = (i - (Vent_N - 1)/2) * Vent_Spc;
+        translate([0, y_off, Collar_H / 2])
+            rotate([0, 90, 0])
+                hull() {
+                    translate([0, 0, Wall_Thick + 1])
+                        cube([Vent_W + 1.5, Vent_W + 1.5, 0.1], center=true);
+                    translate([0, 0, -(Wall_Thick + 1)])
+                        cube([Vent_W, Vent_W, 0.1], center=true);
+                };
+    }
+}
+
+// ==========================================
+// 11. REAR ANCHOR
+// ==========================================
+
+module rear_anchor_negative() {
+    translate([0, 0, -1])
+        cylinder(h=Anchor_Dep + 1, d=Anchor_Dia, $fn=64);
+
+    for (a = [0, 90]) {
+        rotate([0, 0, a])
+            translate([0, -Anchor_Key/2, -1])
+                cube([Anchor_Dia/2 + 2, Anchor_Key, Anchor_Dep + 1]);
+    }
+
+    translate([0, 0, -10])
+        cylinder(h=30, d=15, $fn=32);
+}
