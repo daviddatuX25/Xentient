@@ -254,5 +254,15 @@ export function validateMessage<T extends MessageType>(
   return schema.parse(data) as z.infer<(typeof ALL_SCHEMAS)[T]>;
 }
 
+// ── MCP Event Method Names ──────────────────────────────────────────
+// Used by core.ts to send notifications over MCP stdio transport.
+export const MCP_EVENTS = {
+  motion_detected: "xentient/motion_detected",
+  voice_start: "xentient/voice_start",
+  voice_end: "xentient/voice_end",
+  mode_changed: "xentient/mode_changed",
+  sensor_update: "xentient/sensor_update",
+} as const;
+
 // ── Export all schemas for JSON-Schema generation ────────────────────
 export const ALL_CONTRACT_SCHEMAS = ALL_SCHEMAS;

@@ -3,11 +3,12 @@ import { readFile, stat, readdir } from "fs/promises";
 import { join, extname } from "path";
 import { EventEmitter } from "events";
 import { MqttClient } from "./MqttClient";
-import { Pipeline, LatencyReport } from "../engine/Pipeline";
+import { CameraServer } from "./CameraServer";
 import { ModeManager } from "../engine/ModeManager";
+import type { SensorCache } from "../shared/types";
 import pino from "pino";
 
-const logger = pino({ name: "control-server" });
+const logger = pino({ name: "control-server" }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -22,37 +23,28 @@ const MIME_TYPES: Record<string, string> = {
 
 export class ControlServer extends EventEmitter {
   private mqtt: MqttClient;
-  private pipeline: Pipeline;
   private modeManager: ModeManager;
+  private cameraServer: CameraServer;
+  private sensorCache: SensorCache;
   private sseClients: Set<ServerResponse> = new Set();
   private port: number;
   private publicDir: string;
+  private server: InstanceType<typeof import("http").Server> | null = null;
 
   constructor(
     port: number,
     mqtt: MqttClient,
-    pipeline: Pipeline,
     modeManager: ModeManager,
+    cameraServer: CameraServer,
+    sensorCache: SensorCache,
   ) {
     super();
     this.port = port;
     this.mqtt = mqtt;
-    this.pipeline = pipeline;
     this.modeManager = modeManager;
+    this.cameraServer = cameraServer;
+    this.sensorCache = sensorCache;
     this.publicDir = join(__dirname, "../../public");
-
-    // Wire pipeline events → SSE clients
-    this.pipeline.on("transcript", (text: string) => {
-      this.broadcastSSE({ type: "transcript", text });
-    });
-
-    this.pipeline.on("latency", (report: LatencyReport) => {
-      this.broadcastSSE({ type: "latency", ...report });
-    });
-
-    this.pipeline.on("turnComplete", (data: { transcript: string }) => {
-      this.broadcastSSE({ type: "ai_response", text: data.transcript, durationMs: 0 });
-    });
 
     // Wire MQTT mode status → SSE clients
     this.mqtt.on("modeStatus", (data: unknown) => {
@@ -77,7 +69,7 @@ export class ControlServer extends EventEmitter {
 
   start(): Promise<void> {
     return new Promise((resolve) => {
-      const server = createServer(async (req, res) => {
+      this.server = createServer(async (req, res) => {
         try {
           await this.handleRequest(req, res);
         } catch (err) {
@@ -86,10 +78,24 @@ export class ControlServer extends EventEmitter {
         }
       });
 
-      server.listen(this.port, () => {
+      this.server.listen(this.port, () => {
         logger.info({ port: this.port }, "Control server listening");
         resolve();
       });
+    });
+  }
+
+  close(): Promise<void> {
+    return new Promise((resolve) => {
+      for (const client of this.sseClients) {
+        try { client.end(); } catch { /* ignore */ }
+      }
+      this.sseClients.clear();
+      if (this.server) {
+        this.server.close(() => resolve());
+      } else {
+        resolve();
+      }
     });
   }
 
@@ -159,8 +165,7 @@ export class ControlServer extends EventEmitter {
       const body = await this.readBody(req);
       const text = body.text as string | undefined;
       if (text) {
-        // Inject text directly into pipeline (bypasses STT)
-        this.pipeline.emit("transcript" as never, text);
+        // Broadcast text to SSE clients (Pipeline removed — text injection now via MCP)
         this.broadcastSSE({ type: "transcript", text });
         this.sendJSON(res, 200, { ok: true, text });
       } else {
@@ -169,11 +174,39 @@ export class ControlServer extends EventEmitter {
       return;
     }
 
+    if (url === "/api/sensors" && method === "GET") {
+      this.sendJSON(res, 200, {
+        temperature: this.sensorCache.temperature,
+        humidity: this.sensorCache.humidity,
+        pressure: this.sensorCache.pressure,
+        motion: this.sensorCache.motion,
+        lastMotionAt: this.sensorCache.lastMotionAt,
+      });
+      return;
+    }
+
+    if (url === "/api/mode" && method === "GET") {
+      this.sendJSON(res, 200, { mode: this.modeManager.getMode() });
+      return;
+    }
+
+    if (url === "/api/camera" && method === "GET") {
+      const jpeg = this.cameraServer.getLatestJpeg();
+      if (jpeg) {
+        res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "no-cache" });
+        res.end(jpeg);
+      } else {
+        this.sendJSON(res, 404, { error: "No camera frame available" });
+      }
+      return;
+    }
+
     if (url === "/api/status" && method === "GET") {
       this.sendJSON(res, 200, {
         mode: this.modeManager.getMode(),
         mqtt: this.mqtt.connected,
-        pipeline: "idle", // TODO: wire actual pipeline state
+        camera: this.cameraServer.getStats(),
+        sensors: this.sensorCache,
       });
       return;
     }

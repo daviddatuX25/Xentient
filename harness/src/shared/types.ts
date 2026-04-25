@@ -6,8 +6,9 @@
 
 /** Sensor cache populated by MQTT sensor events, consumed by MCP tools. */
 export interface SensorCache {
-  temperature: number;
-  humidity: number;
-  pressure: number;
-  motion: boolean;
+  temperature: number | null;
+  humidity: number | null;
+  pressure: number | null;
+  motion: boolean | null;
+  lastMotionAt: number | null;
 }
