@@ -38,11 +38,20 @@ export const MODE_TRANSITIONS: Record<Mode, Mode[]> = {
 };
 
 // ── LCD Face Constants ─────────────────────────────────────────────
+// Mode-based faces (default display per mode)
 export const LCD_FACES: Record<Mode, { line1: string; line2: string }> = {
-  sleep: { line1: "(_ _) Zzz", line2: "" },
-  listen: { line1: "(O_O)", line2: "listening" },
-  active: { line1: "(^_^)", line2: "Xentient" },
-  record: { line1: "(_ _) REC", line2: "" },
+  sleep: { line1: "(_ _) Zzz", line2: "  ready..." },
+  listen: { line1: "(O_O)", line2: "listening..." },
+  active: { line1: "(^_^) Xentient", line2: "  ready..." },
+  record: { line1: "(>_<) REC", line2: "" },
+};
+
+// Pipeline-state faces (expressive, shown during active pipeline stages)
+export const PIPELINE_FACES: Record<PipelineState, { line1: string; line2: string }> = {
+  idle: { line1: "(^_^) Xentient", line2: "  ready..." },
+  listening: { line1: "(O_O)", line2: "listening..." },
+  thinking: { line1: "(@_@) thinking...", line2: "..." },
+  speaking: { line1: "(>_<) talking", line2: "..." },
 };
 
 // ── Base Envelope ────────────────────────────────────────────────────

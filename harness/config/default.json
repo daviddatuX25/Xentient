@@ -32,5 +32,51 @@
   "camera": {
     "wsPort": 8081,
     "idleTimeoutMs": 10000
+  },
+  "rules": {
+    "tickMs": 2000,
+    "failoverMode": "rule-only",
+    "static": [
+      {
+        "id": "pir-wake",
+        "enabled": true,
+        "priority": 0,
+        "source": "static",
+        "cooldownMs": 0,
+        "trigger": { "type": "event", "event": "motion_detected" },
+        "condition": [{ "field": "mode", "operator": "==", "value": "sleep" }],
+        "action": { "type": "set_mode", "mode": "listen" }
+      },
+      {
+        "id": "high-temp-warning",
+        "enabled": true,
+        "priority": 5,
+        "source": "static",
+        "cooldownMs": 300000,
+        "trigger": { "type": "sensor", "sensor": "temperature", "operator": ">", "value": 35 },
+        "action": {
+          "type": "chain",
+          "actions": [
+            { "type": "set_lcd", "line1": "(T_T)", "line2": "Its hot!" },
+            { "type": "play_chime", "preset": "alert" }
+          ]
+        }
+      },
+      {
+        "id": "morning-chime",
+        "enabled": true,
+        "priority": 10,
+        "source": "static",
+        "cooldownMs": 3600000,
+        "trigger": { "type": "cron", "schedule": "0 8 * * *" },
+        "action": {
+          "type": "chain",
+          "actions": [
+            { "type": "play_chime", "preset": "morning" },
+            { "type": "set_lcd", "line1": "(^_^)/", "line2": "Good morning!" }
+          ]
+        }
+      }
+    ]
   }
 }

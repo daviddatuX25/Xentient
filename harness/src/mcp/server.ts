@@ -1,3 +1,19 @@
+/**
+ * MCP SDK transport import paths (verified @ v1.29.0)
+ *
+ * Phase 3 (SSE/HTTP transport for Hermes cloud brain) will use one of:
+ *   import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+ *   import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+ *   import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+ *
+ * SSEServerTransport        — legacy HTTP+SSE transport (Express IncomingMessage/ServerResponse)
+ * StreamableHTTPServerTransport — Node.js Streamable HTTP transport (IncomingMessage/ServerResponse)
+ * WebStandardStreamableHTTPServerTransport — Web Standard APIs (Request/Response), works on Node 18+, Bun, Deno, CF Workers
+ *
+ * For the Xentient harness (Node.js + Express), SSEServerTransport or StreamableHTTPServerTransport
+ * are the appropriate choices. StreamableHTTP is the newer protocol (MCP 2025-03-26 spec) and is
+ * recommended over SSE for new implementations.
+ */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
