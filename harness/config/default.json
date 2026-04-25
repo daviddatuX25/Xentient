@@ -33,6 +33,11 @@
     "wsPort": 8081,
     "idleTimeoutMs": 10000
   },
+  "transport": {
+    "stdio": true,
+    "sse": false,
+    "ssePort": 3001
+  },
   "rules": {
     "tickMs": 2000,
     "failoverMode": "rule-only",

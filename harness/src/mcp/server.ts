@@ -1,24 +1,11 @@
-/**
- * MCP SDK transport import paths (verified @ v1.29.0)
- *
- * Phase 3 (SSE/HTTP transport for Hermes cloud brain) will use one of:
- *   import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
- *   import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
- *   import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
- *
- * SSEServerTransport        — legacy HTTP+SSE transport (Express IncomingMessage/ServerResponse)
- * StreamableHTTPServerTransport — Node.js Streamable HTTP transport (IncomingMessage/ServerResponse)
- * WebStandardStreamableHTTPServerTransport — Web Standard APIs (Request/Response), works on Node 18+, Bun, Deno, CF Workers
- *
- * For the Xentient harness (Node.js + Express), SSEServerTransport or StreamableHTTPServerTransport
- * are the appropriate choices. StreamableHTTP is the newer protocol (MCP 2025-03-26 spec) and is
- * recommended over SSE for new implementations.
- */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
 import { z } from "zod";
 import { createToolHandlers, type McpToolDeps } from "./tools";
 import { wireMcpEvents } from "./events";
+import config from "../../config/default.json";
 import pino from "pino";
 
 const logger = pino({ name: "mcp-server" }, process.stderr);
@@ -166,6 +153,24 @@ export async function startMcpServer(deps: McpServerDeps): Promise<McpServer> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info("MCP server connected via stdio");
+
+  // ── SSE Transport (Phase 3: Hermes cloud brain connection) ────────
+  const mcpDual = process.env.MCP_DUAL === "true";
+  const mcpTransport = process.env.MCP_TRANSPORT ?? "";
+  const transportConfig = (config as Record<string, unknown>).transport as
+    | { stdio?: boolean; sse?: boolean; ssePort?: number }
+    | undefined;
+  const enableSSE = mcpDual || mcpTransport === "sse" || transportConfig?.sse === true;
+
+  if (enableSSE) {
+    const sseApp = express();
+    const sseTransport = new SSEServerTransport("/mcp", sseApp);
+    await server.connect(sseTransport);
+    const mcpPort = parseInt(process.env.MCP_PORT ?? String(transportConfig?.ssePort ?? 3001), 10);
+    sseApp.listen(mcpPort, () => {
+      logger.info({ mcpPort, transport: "sse" }, "MCP SSE transport listening");
+    });
+  }
 
   return server;
 }
