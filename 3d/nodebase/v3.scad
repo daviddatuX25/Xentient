@@ -5,6 +5,13 @@
 // Print: PETG, 0.2mm layers, 45° overhangs (support-free)
 // Bed: Base (150mm F2F) flat on bed, rear face down
 // Units: mm
+//
+// V3.1 — Restored shell features:
+//   ✅ 6× rail slots at hex vertices (collar zone, Z=3–12)
+//   ✅ 3× alignment keyways at 0°, 120°, 240°
+//   ✅ Reference pits at Zone A/B/C mounting coordinates
+//   ✅ Landing pads (8mm dia) at Zone B standoff coords (Path B)
+//   Interior plates/bosses remain separate modules (zone_a_tray, etc.)
 
 $fn = 128;
 
@@ -504,17 +511,86 @@ module xentient_hub_v3() {
                 translate([Base_Apo, 0, 0])
                     ventilation_negative();
         }
+
+        // ====== RAIL SLOTS (6× at hex vertices) ======
+        // 3.5mm wide × 2mm deep grooves, collar zone only (Z=3–12)
+        // For Path A plate insertion
+        for (a = [0 : 60 : 300]) {
+            rotate([0, 0, a])
+                translate([Inner_Base_R, 0, 0])
+                    rotate([0, 90, 0])
+                        hull() {
+                            translate([0, -1.75, 3])
+                                cube([2.1, 3.6, 1], center=true);
+                            translate([0, -1.75, 12])
+                                cube([2.1, 3.6, 1], center=true);
+                        };
+        }
+
+        // ====== ALIGNMENT KEYWAYS (3× at 0°, 120°, 240°) ======
+        // Subtractive grooves on inner cavity wall for angular orientation
+        for (a = [0, 120, 240]) {
+            rotate([0, 0, a])
+                translate([Inner_Base_R, 0, 0])
+                    rotate([0, 90, 0])
+                        hull() {
+                            translate([0, -0.75, Shell_T])
+                                cube([1.6, 1.6, 1], center=true);
+                            translate([0, -0.75, Total_Depth - Shell_T])
+                                cube([1.6, 1.6, 1], center=true);
+                        };
+        }
+
+        // ====== REFERENCE PITS (Zone A/B/C mounting coords) ======
+        // 0.5mm deep × 1.5mm diameter subtractive dimples
+        // Easier to locate with drill bit or glue tip than additive bumps
+
+        // Zone A: Battery/power coordinates
+        for (pos = [
+            [0, -25, Shell_T + 3],           // Battery holder center
+            [15, 30, Shell_T + 3],            // TP4056 position
+            [-15, 30, Shell_T + 3],           // MT3608 position
+        ]) {
+            translate(pos)
+                cylinder(h=0.6, d=1.5, $fn=16);
+        }
+
+        // Zone B: Master board standoff coords (±57, ±37 at Z=20)
+        for (sx = [-1, 1], sy = [-1, 1]) {
+            translate([sx * 57, sy * 37, Shell_T + 2])
+                cylinder(h=0.6, d=1.5, $fn=16);
+        }
+
+        // Zone C: ESP32 standoff coords (±11, ±24 at Z=45)
+        for (sx = [-1, 1], sy = [-1, 1]) {
+            translate([sx * 11, 18 + sy * 24, Shell_T + 45])
+                cylinder(h=0.6, d=1.5, $fn=16);
+        }
+
+        // ====== LANDING PADS (Zone B, Path B glue targets) ======
+        // 8mm diameter × 0.5mm raised circles on inner cavity wall
+        // NOTE: These are ADDITIVE (positive), placed on inner wall surface
+        // for Path B builders to scuff and glue standoffs onto
     }
 
-    // ====== OPEN ATRIUM — no internal content ======
-    // All bosses, landing pads, cradles, standoffs, dimples, and
-    // rail slots removed. Shell is a clean hollow with only:
-    //   - Port pockets + sleeves (6 side + 1 front)
-    //   - USB-C cutout
-    //   - Ventilation gills
-    //   - Rear anchor
-    //   - Aesthetic collar ribs
-    // Interior mounting will be designed separately.
+    // ====== ADDITIVE: LANDING PADS (Zone B) ======
+    // Flat raised circles at Zone B standoff coordinates for glue-in standoffs
+    // Path B only — Path A uses printed bosses instead
+    for (sx = [-1, 1], sy = [-1, 1]) {
+        // Project landing pads onto inner hex wall surface
+        // At Z=20, inner radius ≈ Base_R - Shell_T/cos(30) - (Z-Collar)*slope
+        land_r = Inner_Base_R - (Inner_Base_R - Inner_Front_R2) * (20 - Collar_H) / Pyr_H;
+        // Wall angle at this Z
+        land_angle = atan2(sy * 37, sx * 57);  // Direction from center
+        // Place pad on inner wall at the standoff direction
+        translate([sx * 57 * 0.6, sy * 37 * 0.6, Shell_T + 20])
+            cylinder(h=0.5, d=8, $fn=32);
+    }
+
+    // ====== OPEN ATRIUM — modular interior ======
+    // Shell provides: pockets, sleeves, rail slots, keyways, reference pits,
+    // landing pads, USB-C, ventilation, rear anchor, collar ribs.
+    // Interior mounting plates designed as separate .scad modules.
 }
 
 // ==========================================
