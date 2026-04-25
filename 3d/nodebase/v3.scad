@@ -36,7 +36,7 @@ Inner_Front_R2 = Outer_R_at_front - Shell_T / cos(30);  // ~32.17
 // --- Universal Socket Pocket ---
 Port_W       = 24.4;    // Male sled width + 0.4mm tolerance
 Port_H       = 16.4;    // Male sled height + 0.4mm tolerance
-Port_D       = 15.0;    // Pocket depth (wall swells here)
+Port_D       = 10.0;    // Pocket depth per Framework §2 (10mm female socket)
 WireCh_W     = 18.0;    // Wire channel width
 WireCh_H     = 8.0;     // Wire channel height
 Mounting_Lip = 2.0;     // Internal flange for JST-breakout PCB
@@ -55,7 +55,7 @@ Board_L    = 120.0;
 Board_W    = 80.0;
 Board_SoX  = 110.0;    // Standoff span X (80mm board width, ~110mm along length)
 Board_SoY  = 70.0;     // Standoff span Y (120mm board length, ~70mm along width)
-Board_Chamfer = 8.0;   // Corner chamfer to fit inside hex at Z=20
+Board_Chamfer = 15.0;   // Corner chamfer to fit inside hex at Z=20 (8mm was too small)
 
 // --- ESP32-WROOM-32 Dev Board ---
 ESP_BoardL  = 55.0;
@@ -143,8 +143,8 @@ module socket_pocket_negative() {
 
 module socket_pocket_sleeve() {
     // Positive boss extending inward from inner wall surface
-    // Creates the 15mm deep recessed pocket for the male sled
-    // Wall swells from 3mm to 15mm only at socket locations
+    // Creates the 10mm deep recessed pocket per Framework §2
+    // Wall swells from 3mm to ~10mm only at socket locations
 
     draft_off = Port_D * tan(1.0);
 
@@ -308,6 +308,10 @@ module usb_c_cutout_negative() {
                     translate([0, 0, -(Shell_T + 2)])
                         cube([USB_H, USB_W, 0.1], center=true);
                 }
+    // Floor overcut: 1mm below floor for thick cable plug housing
+    rotate([0, 0, 90])
+        translate([Base_Apo, 0, Shell_T - 0.5])
+            cube([4, USB_W + 4, 2], center=true);
 }
 
 // ==========================================
@@ -317,7 +321,7 @@ module usb_c_cutout_negative() {
 module master_board_standoffs() {
     // 4x M3 standoffs for 120x80mm solder board
     // Board sits at Z=20, standoffs rise from floor
-    // Board corners chamfered 8mm to fit inside hex boundary
+    // Board corners chamfered 15mm to fit inside hex at Z=20
     so_h = 20.0;  // Floor-to-board-top height
 
     // Board rest plate with chamfered corners (hex-safe)
@@ -454,28 +458,15 @@ module xentient_hub_v3() {
                         cube([4, 12, Collar_H + 2], center=true);
             }
 
-            // Taper ribs (structural, along pyramid faces)
-            rib_count = 6;
-            for (i = [0 : 60 : 359]) {
-                rotate([0, 0, i])
-                    translate([0, 0, Collar_H + Pyr_H/2])
-                        hull() {
-                            translate([Base_F2F/2 - 2, 0, -Pyr_H/2 + 2])
-                                cube([3, 8, 4], center=true);
-                            translate([Front_F2F/2 - 1, 0, Pyr_H/2 - 2])
-                                cube([2, 6, 4], center=true);
-                        }
-            }
-
-            // 6x Side pocket sleeves (provide 15mm depth)
+            // 6x Side pocket sleeves (10mm recessed sleeve per Framework §2)
             for (a = [30 : 60 : 330]) {
                 rotate([0, 0, a])
-                    translate([port_apo - Port_D/2, 0, port_Z])
+                    translate([port_apo, 0, port_Z])
                         rotate([0, 90 - Face_Tilt, 0])
                             socket_pocket_sleeve();
             }
 
-            // Top face pocket sleeve
+            // Top face pocket sleeve (10mm depth per Framework §2)
             translate([0, 0, Total_Depth - Port_D/2])
                 rotate([0, 0, 90])
                     front_port_sleeve();
@@ -513,6 +504,46 @@ module xentient_hub_v3() {
                 translate([Base_Apo, 0, 0])
                     ventilation_negative();
         }
+
+        // ====== RAIL SLOTS (subtractive channels at hex vertices, collar zone only) ======
+        // 3.5mm wide x 2mm deep grooves for plate edge insertion
+        // Only in collar zone (Z=3 to Z=12) where wall is thick enough
+        for (a = [0 : 60 : 300]) {
+            rotate([0, 0, a])
+                hull() {
+                    translate([Base_Apo - 1, 0, Shell_T + 1])
+                        cube([2, 3.5, 1], center=true);
+                    translate([Base_Apo - 1, 0, Collar_H - 1])
+                        cube([2, 3.5, 1], center=true);
+                }
+        }
+
+        // ====== ALIGNMENT KEYWAYS (subtractive grooves at 0°, 120°, 240°) ======
+        for (a = [0, 120, 240]) {
+            rotate([0, 0, a])
+                translate([Base_Apo - 2.5, 0, Shell_T + 1])
+                    cube([2, 3.5, Collar_H - Shell_T - 2], center=true);
+        }
+
+        // ====== REFERENCE DIMPLES (subtractive pits — drilling/gluing template) ======
+        // 0.5mm deep × 1.5mm diameter depressions
+        // Zone B Path B standoff markers (±57, ±37 for manual standoff placement)
+        for (sx = [-1, 1], sy = [-1, 1]) {
+            translate([sx * 57, sy * 37, 20])
+                cylinder(h=0.5, d=1.5, $fn=12);
+        }
+        // Zone B center marker
+        translate([0, 0, 20])
+            cylinder(h=0.5, d=1.5, $fn=12);
+        // Zone C center marker
+        translate([0, 18, 45])
+            cylinder(h=0.5, d=1.5, $fn=12);
+        // Zone A battery center
+        translate([0, -25, Shell_T])
+            cylinder(h=0.5, d=1.5, $fn=12);
+        // Zone A power cluster center
+        translate([-11, 30, Shell_T])
+            cylinder(h=0.5, d=1.5, $fn=12);
     }
 
     // ====== MODULAR MOUNTING BOSSES (hub shell only) ======
@@ -542,66 +573,34 @@ module xentient_hub_v3() {
             }
     }
 
-    // Zone B: 4x M3 mounting bosses (master solder board plate)
-    for (sx = [-1, 1], sy = [-1, 1]) {
-        translate([sx * Board_SoX/2, sy * Board_SoY/2, 20])
-            difference() {
-                cylinder(h=6, d=M3_Boss, $fn=24);
-                translate([0, 0, 1])
-                    cylinder(h=5.5, d=M3_Insert, $fn=24);
-            }
-    }
+    // Zone B: 4x M3 mounting bosses (Path A only — use landing pads for Path B)
+    // Uncomment for Path A assembly:
+    // for (sx = [-1, 1], sy = [-1, 1]) {
+    //     translate([sx * Board_SoX/2, sy * Board_SoY/2, 20])
+    //         difference() {
+    //             cylinder(h=6, d=M3_Boss, $fn=24);
+    //             translate([0, 0, 1])
+    //                 cylinder(h=5.5, d=M3_Insert, $fn=24);
+    //         }
+    // }
 
-    // Zone C: 4x M2 mounting bosses (ESP32 dev board plate)
-    for (sx = [-1, 1], sy = [-1, 1]) {
-        translate([sx * ESP_SoX/2, sy * ESP_SoY/2 + 18, 45])
-            difference() {
-                cylinder(h=6, d=M2_Boss, $fn=24);
-                translate([0, 0, 1])
-                    cylinder(h=5.5, d=M2_Hole, $fn=24);
-            }
-    }
+    // Zone C: 4x M2 mounting bosses (Path A only — use landing pads for Path B)
+    // Uncomment for Path A assembly:
+    // for (sx = [-1, 1], sy = [-1, 1]) {
+    //     translate([sx * ESP_SoX/2, sy * ESP_SoY/2 + 18, 45])
+    //         difference() {
+    //             cylinder(h=6, d=M2_Boss, $fn=24);
+    //             translate([0, 0, 1])
+    //                 cylinder(h=5.5, d=M2_Hole, $fn=24);
+    //         }
+    // }
 
-    // 6x Internal vertical corner ribs with rail slots
-    // At each hex vertex, a rib runs floor-to-front with a 3.5mm slot
-    // for plate edge insertion. Locks X/Y, screw/glue locks Z.
-    for (a = [0 : 60 : 300]) {
-        rib_base_r = Base_R - Shell_T/cos(30) - 1;
-        rib_front_r = Front_R - Shell_T/cos(30) + (Base_R - Front_R) * Collar_H / Pyr_H + 1;
-        rotate([0, 0, a])
-            translate([rib_base_r, 0, 0])
-                hull() {
-                    translate([0, 0, Shell_T + 1])
-                        cube([4, 4, 1], center=true);
-                    translate([rib_base_r - rib_front_r, 0, Inner_Front_Z - 1])
-                        cube([3, 3, 1], center=true);
-                }
-    }
-
-    // Rail slots in each rib (3.5mm wide channel for plate edges)
-    for (a = [0 : 60 : 300]) {
-        rib_base_r = Base_R - Shell_T/cos(30) - 1;
-        rib_front_r = Front_R - Shell_T/cos(30) + (Base_R - Front_R) * Collar_H / Pyr_H + 1;
-        rotate([0, 0, a])
-            translate([rib_base_r - 0.5, 0, 0])
-                hull() {
-                    translate([0, 0, Shell_T + 2])
-                        cube([1.5, 3.5, 1], center=true);
-                    translate([rib_base_r - rib_front_r, 0, Inner_Front_Z - 2])
-                        cube([1.5, 3.5, 1], center=true);
-                }
-    }
-
-    // 3x Vertical alignment keyways (0°, 120°, 240° on cavity walls)
-    for (a = [0, 120, 240]) {
-        rotate([0, 0, a])
-            translate([Base_Apo - 3, -1, Shell_T])
-                cube([3, 2, Inner_Front_Z - Shell_T - 4]);
-    }
+    // Rail slots and keyways are now SUBTRACTIVE (inside the difference() block)
+    // See the difference() block above for rail slots and alignment keyways
 
     // Flat "Landing Pads" for glue-in standoffs (Path B assembly)
     // 8mm diameter, 0.5mm raised circles on cavity wall surfaces
-    // Zone B: at ±57, ±37 at Z=20 (master board standoff coordinates)
+    // Zone B: at ±55, ±35 at Z=20 (master board standoff coordinates)
     for (sx = [-1, 1], sy = [-1, 1]) {
         translate([sx * Board_SoX/2, sy * Board_SoY/2, 20])
             cylinder(h=0.5, d=8, $fn=24);
@@ -619,19 +618,8 @@ module xentient_hub_v3() {
             cylinder(h=0.5, d=8, $fn=24);
     }
 
-    // Reference dimples (1mm pips) — drilling/gluing template
-    // Zone B center marker
-    translate([0, 0, 20])
-        cylinder(h=0.8, d=1, $fn=12);
-    // Zone C center marker
-    translate([0, 18, 45])
-        cylinder(h=0.8, d=1, $fn=12);
-    // Zone A battery center
-    translate([0, -25, Shell_T])
-        cylinder(h=0.8, d=1, $fn=12);
-    // Zone A power cluster center
-    translate([-11, 30, Shell_T])
-        cylinder(h=0.8, d=1, $fn=12);
+    // Reference dimples are now SUBTRACTIVE (inside the difference() block)
+    // See the difference() block above for pit-style dimples
 
     // Front-face display sled retainer (NOT inside intersection — mounted to front wall)
     // The LCD is a Display Cap per spec, plugs into the front center socket

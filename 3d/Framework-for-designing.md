@@ -26,7 +26,7 @@ Width: 24.0mm
 
 Height: 16.0mm
 
-Depth: 10.0mm
+Depth: 10.0mm (Port_D in SCAD; recessed sleeve behind wall provides pocket depth)
 
 Internal Wire Channel: 18.0mm W x 8.0mm H (Sized precisely to allow a 6-pin JST XH2.54 connector to pass through during assembly).
 
@@ -73,7 +73,7 @@ Internal Zoning & Mounts:
 
 Zone A (Rear/Floor, Z=3–15): Battery holder (18650 clip-in, ~78×22×19mm) glued to hub floor at Y=−25mm. Power modules: TP4056 (25×19mm, near USB-C at 90° face), MT3608 boost (37×22mm, adjacent to TP4056), and 3.3V LDO (12×8mm) — all glued to floor or optional Zone A tray plate. See §7 for assembly paths.
 
-Zone B (Middle, Z=20–37): 120×80mm master solder board on M3 standoffs (110×70mm span). Board corners chamfered 8mm to fit hex boundary. 4× M3 heat-set bosses in hub shell for screw-mount, or 4× flat landing pads for glue-in standoffs.
+Zone B (Middle, Z=20–37): 120×80mm master solder board on M3 standoffs (110×70mm span). Board corners chamfered 15mm to fit hex boundary at Z=20 (inner apothem ≈64mm, diagonal corners exceed without 15mm chamfer). 4× M3 heat-set bosses in hub shell for screw-mount (Path A only), or 4× flat landing pads for glue-in standoffs (Path B).
 
 Zone C (Upper, Z=45–65): ESP32-WROOM-32 dev board (55×28mm) on M2 standoffs (22×48mm span), Y-offset +18mm. 4× M2 heat-set bosses or landing pads at Zone C coordinates.
 
@@ -188,19 +188,19 @@ Hub Shell Scope (what stays in v3.scad):
 - Socket pockets (7 faces) + sleeves (MANDATORY — Universal Mating depends on these)
 - Ventilation gills
 - Rear anchor
-- USB-C cutout (MANDATORY — TP4056 charging access)
-- Aesthetic/structural ribs
-- 6× Internal vertical corner ribs with 3.5mm rail slots (for plate insertion)
-- Mounting bosses with M3/M2 heat-set inserts on cavity floor/walls
+- USB-C cutout (MANDATORY — TP4056 charging access, includes 1mm floor overcut for thick cable plug housing)
+- Collar aesthetic ribs (6×, collar zone only — taper ribs removed, replaced by subtractive rail slots)
+- 6× Subtractive rail slots at hex vertices (3.5mm wide × 2mm deep, collar zone only Z=3–12) for plate insertion
+- Mounting bosses with M3 heat-set inserts at Zone A (battery/power). Zone B/C bosses are Path A only — omitted in Path B builds for cleaner wiring atrium
 - Flat "Landing Pads" (8mm diameter, 0.5mm raised circles) at Zone B standoff coordinates on cavity walls — glue targets for physical standoffs
-- 3× Vertical alignment keyways at 0°, 120°, 240° on cavity walls
-- 1mm "Reference Dimples" at Zone A/B/C mounting coordinates (acts as drilling/gluing template)
+- 3× Vertical alignment keyways (subtractive grooves) at 0°, 120°, 240° on cavity walls
+- 0.5mm deep × 1.5mm diameter subtractive reference pits at Zone A/B/C mounting coordinates (easier to locate with drill bit or glue tip than additive bumps). Zone B includes Path B standoff markers at (±57, ±37) for manual glue placement.
 
 Module Definitions (separate .scad files, OPTIONAL for Path A builds):
 
 Zone A Tray (zone_a_tray.scad): Battery cradle floor plate with clip-in pockets for TP4056, MT3608, LDO. 2mm thick hex-shaped plate with central 30×30mm wire chimney cutout. Notches around port sleeve intrusions. Screws onto 4× M3 bosses at Z=3. Slides into rail slots at 0° and 120° corners. Must fit within hex F2F at Z=3 (≈142mm).
 
-Zone B Plate (zone_b_plate.scad): Master solder board mounting plate with 4× M3 standoffs (110×70mm span), cross-bracing, 30×30mm wire chimney, chamfered corners, hex-grid infill for airflow. Notches around port sleeve intrusions. Screws onto 4× M3 bosses at Z=20. Slides into rail slots. Must fit within hex F2F at Z=20 (≈133mm).
+Zone B Plate (zone_b_plate.scad): Master solder board mounting plate with 4× M3 standoffs (110×70mm span), cross-bracing, 30×30mm wire chimney, 15mm chamfered corners (must clear hex apothem at Z=20), hex-grid infill for airflow. Notches around port sleeve intrusions. Screws onto 4× M3 bosses at Z=20 (Path A) or rests on glued standoffs at landing pads (Path B). Must fit within hex F2F at Z=20 (≈133mm).
 
 Zone C Plate (zone_c_plate.scad): ESP32-WROOM-32 mounting plate with 4× M2 standoffs (22×48mm span), anti-rotation nub, 30×30mm wire chimney, hex-grid infill. Screws onto 4× M2 bosses at Z=45. Must fit within hex F2F at Z=45 (≈106mm).
 
@@ -213,7 +213,7 @@ All printed internal plates MUST include:
 3. Hex-Grid Infill: Non-structural plate areas should use honeycomb pattern (not solid fill). Allows the ventilation gills to move air across all layers. Prevents heat stagnation near MAX98357A amp.
 
 Internal Rail System:
-6 vertical corner ribs at each hex vertex (0°, 60°, 120°, 180°, 240°, 300°) run from Z=Shell_T to Z=Inner_Front_Z. Each rib has a 3.5mm-wide slot (the "Rail"). Zone plates feature matching edge notches that slide into these rails, locking X/Y position. A single screw or glue drop locks Z height.
+6 subtractive rail slots at each hex vertex (0°, 60°, 120°, 180°, 240°, 300°) cut INTO the inner wall surface. Rails are 3.5mm wide × 2mm deep grooves, active ONLY in the collar zone (Z=3 to Z=12) where the wall is a full 3mm thick. Above the collar, the tapering wall is too thin (<2mm) for rail grooves — plates above the collar rest on bosses/landing pads for Z positioning. The collar-zone rails align Zone A tray and provide angular lock for all plates. 3 alignment keyways (subtractive grooves, not ridges) at 0°, 120°, 240° provide additional angular orientation.
 
 Assembly Method (Path A — Printed Plates):
 1. Print hub shell (v3.scad) with ribs, bosses, keyways, landing pads.
