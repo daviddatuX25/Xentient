@@ -24,8 +24,15 @@ import pino from "pino";
 const logger = pino({ name: "mcp-server" }, process.stderr);
 
 export type { McpToolDeps };
+import type { RuleEngine } from "../engine/RuleEngine";
+import type { HealthMonitor } from "../engine/HealthMonitor";
 
-export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
+export interface McpServerDeps extends McpToolDeps {
+  ruleEngine: RuleEngine;
+  onToolCall?: () => void;
+}
+
+export async function startMcpServer(deps: McpServerDeps): Promise<McpServer> {
   const server = new McpServer({
     name: "xentient-core",
     version: "1.0.0",

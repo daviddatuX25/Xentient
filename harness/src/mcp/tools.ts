@@ -17,11 +17,14 @@ export interface McpToolDeps {
   modeManager: ModeManager;
   sensorCache: SensorCache;
   ruleEngine: RuleEngine;
+  onToolCall?: () => void;
 }
 
 export function createToolHandlers(deps: McpToolDeps) {
+  const act = () => deps.onToolCall?.();
   return {
     xentient_read_sensors: async () => {
+      act();
       const { sensorCache } = deps;
       return {
         content: [{
@@ -37,6 +40,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_read_mode: async () => {
+      act();
       return {
         content: [{
           type: "text" as const,
@@ -46,6 +50,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_set_mode: async ({ mode }: { mode: string }) => {
+      act();
       const validModes: Mode[] = ["sleep", "listen", "active", "record"];
       if (!validModes.includes(mode as Mode)) {
         return {
@@ -69,6 +74,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_play_audio: async ({ data, format }: { data: string; format: string }) => {
+      act();
       if (format !== "pcm_s16le") {
         return {
           content: [{
@@ -89,6 +95,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_set_lcd: async ({ line1, line2 }: { line1: string; line2: string }) => {
+      act();
       deps.mqtt.publish("xentient/display", {
         v: 1,
         type: "display_update",
@@ -106,6 +113,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_capture_frame: async () => {
+      act();
       const jpeg = deps.camera.getLatestJpeg();
       if (!jpeg) {
         return {
@@ -129,6 +137,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_mqtt_publish: async ({ topic, payload }: { topic: string; payload: Record<string, unknown> }) => {
+      act();
       deps.mqtt.publish(topic, payload);
       return {
         content: [{
@@ -139,6 +148,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_register_rule: async (params: { id: string; enabled?: boolean; trigger: unknown; condition?: unknown; action: unknown; priority?: number; cooldownMs?: number }) => {
+      act();
       const { RuleSchema } = await import("../shared/contracts");
       const rule = {
         id: params.id,
@@ -171,6 +181,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_unregister_rule: async ({ id }: { id: string }) => {
+      act();
       const removed = deps.ruleEngine.unregister(id);
       if (!removed) {
         return {
@@ -184,6 +195,7 @@ export function createToolHandlers(deps: McpToolDeps) {
     },
 
     xentient_list_rules: async () => {
+      act();
       const rules = deps.ruleEngine.list();
       return {
         content: [{ type: "text" as const, text: JSON.stringify(rules, null, 2) }],

@@ -11,6 +11,7 @@ import { ControlServer } from "./comms/ControlServer";
 import { ModeManager } from "./engine/ModeManager";
 import { RuleEngine } from "./engine/RuleEngine";
 import type { FastAction, SlowAction } from "./engine/RuleEngine";
+import { HealthMonitor } from "./engine/HealthMonitor";
 import { startMcpServer } from "./mcp/server";
 import type { SensorCache } from "./shared/types";
 import type { Rule, RuleAction, RuleContext } from "./shared/types";
@@ -113,6 +114,7 @@ async function main() {
     modeManager,
     sensorCache,
     ruleEngine,
+    onToolCall: () => healthMonitor.recordActivity("basic"),
   });
 
   // Wire up notification helper after mcpServer is created
@@ -187,6 +189,34 @@ async function main() {
     }
   });
 
+  // ── Health Monitor ──────────────────────────────────────────────────
+  const healthMonitor = new HealthMonitor(
+    () => {
+      logger.warn("Brain unresponsive — no MCP activity for 60s");
+      if (controlServer && typeof controlServer.broadcastSSE === "function") {
+        controlServer.broadcastSSE({ type: "brain_status", status: "unresponsive" });
+      }
+    },
+    () => {
+      logger.error("Brain disconnected — no MCP activity for 120s, activating failover");
+      if (controlServer && typeof controlServer.broadcastSSE === "function") {
+        controlServer.broadcastSSE({ type: "brain_status", status: "disconnected" });
+      }
+      const failoverMode = config.rules?.failoverMode ?? "rule-only";
+      if (failoverMode === "sleep") {
+        modeManager.transition("sleep");
+      }
+      // rule-only: Core continues autonomously via RuleEngine — no action needed
+    },
+    () => {
+      logger.info("Brain reconnected");
+      if (controlServer && typeof controlServer.broadcastSSE === "function") {
+        controlServer.broadcastSSE({ type: "brain_status", status: "connected" });
+      }
+    },
+  );
+  healthMonitor.start();
+
   // Control server - HTTP API + static files + SSE for browser test page
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
   const controlServer = new ControlServer(controlPort, mqtt, modeManager, cameraServer, sensorCache);
@@ -199,6 +229,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down gracefully...");
+    healthMonitor.stop();
     ruleEngine.stop();
     modeManager.clearIdleTimer();
     mqtt.disconnect();

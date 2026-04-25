@@ -238,7 +238,7 @@ export class ControlServer extends EventEmitter {
     }
   }
 
-  private broadcastSSE(data: object): void {
+  public broadcastSSE(data: object): void {
     const msg = `data: ${JSON.stringify(data)}\n\n`;
     for (const client of this.sseClients) {
       try {
