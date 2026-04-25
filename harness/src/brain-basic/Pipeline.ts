@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import pino from "pino";
 import type { STTProvider, TTSProvider, LLMProvider, MemoryContext } from "../providers/types";
 
-const logger = pino({ name: "brain-pipeline" });
+const logger = pino({ name: "brain-pipeline" }, process.stderr);
 
 export interface LatencyReport {
   sttMs: number;
