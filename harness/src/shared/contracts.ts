@@ -40,8 +40,8 @@ export const MODE_TRANSITIONS: Record<Mode, Mode[]> = {
 // ── LCD Face Constants ─────────────────────────────────────────────
 export const LCD_FACES: Record<Mode, { line1: string; line2: string }> = {
   sleep: { line1: "(_ _) Zzz", line2: "" },
-  listen: { line1: "(O_O)", line2: "listening..." },
-  active: { line1: "(^_^)", line2: "" },
+  listen: { line1: "(O_O)", line2: "listening" },
+  active: { line1: "(^_^)", line2: "Xentient" },
   record: { line1: "(_ _) REC", line2: "" },
 };
 
@@ -126,7 +126,7 @@ export const SensorData = VersionedMessage.extend({
   type: z.literal("sensor_data"),
   peripheralType: z.number().int().min(0).max(255),
   payload: z.union([BME280Payload, PIRPayload]),
-  timestamp: z.number().int().min(0), // epoch-millis (JS-safe, ESP32 uses epoch-seconds)
+  timestamp: z.number().int().min(0), // millis-since-boot on ESP32, epoch-millis on harness side
 });
 
 // ── Session Complete ────────────────────────────────────────────────
