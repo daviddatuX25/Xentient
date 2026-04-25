@@ -3,11 +3,12 @@ import type { MqttClient } from "../comms/MqttClient";
 import type { AudioServer } from "../comms/AudioServer";
 import type { CameraServer } from "../comms/CameraServer";
 import type { ModeManager } from "../engine/ModeManager";
-import type { SensorCache } from "../shared/types"; // RF-5: moved from here to shared to avoid comms↔mcp circular dep
+import type { RuleEngine } from "../engine/RuleEngine";
+import type { SensorCache } from "../shared/types";
 import type { Mode } from "../shared/contracts";
 import pino from "pino";
 
-const logger = pino({ name: "mcp-tools" }, process.stderr); // RF-2: stderr for MCP stdio safety
+const logger = pino({ name: "mcp-tools" }, process.stderr);
 
 export interface McpToolDeps {
   mqtt: MqttClient;
@@ -15,9 +16,8 @@ export interface McpToolDeps {
   camera: CameraServer;
   modeManager: ModeManager;
   sensorCache: SensorCache;
+  ruleEngine: RuleEngine;
 }
-
-// NOTE: SensorCache interface is defined in src/shared/types.ts (Task 0.5) — do NOT redefine here
 
 export function createToolHandlers(deps: McpToolDeps) {
   return {
@@ -135,6 +135,58 @@ export function createToolHandlers(deps: McpToolDeps) {
           type: "text" as const,
           text: JSON.stringify({ success: true }),
         }],
+      };
+    },
+
+    xentient_register_rule: async (params: { id: string; enabled?: boolean; trigger: unknown; condition?: unknown; action: unknown; priority?: number; cooldownMs?: number }) => {
+      const { RuleSchema } = await import("../shared/contracts");
+      const rule = {
+        id: params.id,
+        enabled: params.enabled ?? true,
+        priority: params.priority ?? 10,
+        source: "dynamic" as const,
+        cooldownMs: params.cooldownMs ?? 0,
+        trigger: params.trigger,
+        condition: params.condition as any,
+        action: params.action,
+      };
+      const existing = deps.ruleEngine.list();
+      if (existing.some((r) => r.id === rule.id)) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: `Rule '${rule.id}' already exists` }) }],
+          isError: true,
+        };
+      }
+      const parsed = RuleSchema.safeParse(rule);
+      if (!parsed.success) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: parsed.error.message }) }],
+          isError: true,
+        };
+      }
+      deps.ruleEngine.register(rule as any);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ success: true, ruleId: rule.id }) }],
+      };
+    },
+
+    xentient_unregister_rule: async ({ id }: { id: string }) => {
+      const removed = deps.ruleEngine.unregister(id);
+      if (!removed) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: `Rule '${id}' not found` }) }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ success: true, removed: id }) }],
+      };
+    },
+
+    xentient_list_rules: async () => {
+      const rules = deps.ruleEngine.list();
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(rules, null, 2) }],
       };
     },
   };

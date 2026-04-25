@@ -91,6 +91,68 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
     async ({ topic, payload }) => handlers.xentient_mqtt_publish({ topic, payload }),
   );
 
+  // ── Rule management tools ──────────────────────────────────────────
+
+  const TriggerSchemaLocal = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("cron"), schedule: z.string() }),
+    z.object({ type: z.literal("interval"), everyMs: z.number().int().positive() }),
+    z.object({ type: z.literal("mode"), from: z.enum(["sleep", "listen", "active", "record"]), to: z.enum(["sleep", "listen", "active", "record"]) }),
+    z.object({
+      type: z.literal("sensor"),
+      sensor: z.enum(["temperature", "humidity", "pressure", "motion"]),
+      operator: z.enum([">", "<", "==", ">=", "<="]),
+      value: z.number(),
+    }),
+    z.object({ type: z.literal("event"), event: z.string() }),
+    z.object({ type: z.literal("composite"), all: z.array(z.any()) }),
+  ]);
+
+  const RuleActionSchemaLocal = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("set_mode"), mode: z.enum(["sleep", "listen", "active", "record"]) }),
+    z.object({ type: z.literal("set_lcd"), line1: z.string().max(16), line2: z.string().max(16) }),
+    z.object({ type: z.literal("play_chime"), preset: z.enum(["morning", "alert", "chime"]) }),
+    z.object({ type: z.literal("mqtt_publish"), topic: z.string(), payload: z.record(z.unknown()) }),
+    z.object({ type: z.literal("notify"), event: z.string(), context: z.record(z.unknown()).optional() }),
+    z.object({ type: z.literal("chain"), actions: z.array(z.any()) }),
+  ]);
+
+  const ConditionSchemaLocal = z.object({
+    field: z.enum(["mode", "temperature", "humidity", "pressure", "motion", "time", "dayOfWeek", "lastMotionAgoMs"]),
+    operator: z.enum(["==", "!=", ">", "<", ">=", "<=", "in"]),
+    value: z.union([z.string(), z.number(), z.array(z.string())]),
+  });
+
+  server.tool(
+    "xentient_register_rule",
+    "Register a deterministic rule in the Core rule engine. " +
+    "Rules are evaluated every tick without LLM inference. " +
+    "FAST actions execute immediately. SLOW actions send notifications to the Brain.",
+    {
+      id: z.string().describe("Unique rule identifier"),
+      enabled: z.boolean().default(true),
+      trigger: TriggerSchemaLocal,
+      condition: z.array(ConditionSchemaLocal).optional(),
+      action: RuleActionSchemaLocal,
+      priority: z.number().int().min(0).default(10),
+      cooldownMs: z.number().int().min(0).default(0),
+    },
+    async (params) => handlers.xentient_register_rule(params as any),
+  );
+
+  server.tool(
+    "xentient_unregister_rule",
+    "Remove a rule from the Core rule engine",
+    { id: z.string() },
+    async ({ id }) => handlers.xentient_unregister_rule({ id }),
+  );
+
+  server.tool(
+    "xentient_list_rules",
+    "List all registered rules and their current state",
+    {},
+    async () => handlers.xentient_list_rules(),
+  );
+
   // Wire push-based events from Core subsystems -> Brain
   wireMcpEvents(server, deps.mqtt, deps.modeManager, deps.sensorCache);
 

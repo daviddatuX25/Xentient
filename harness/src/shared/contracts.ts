@@ -263,6 +263,51 @@ export function validateMessage<T extends MessageType>(
   return schema.parse(data) as z.infer<(typeof ALL_SCHEMAS)[T]>;
 }
 
+// ── Rule Engine Schemas ────────────────────────────────────────────────
+
+export const SensorKeySchema = z.enum(["temperature", "humidity", "pressure", "motion"]);
+
+export const TriggerSchema: z.ZodType<import("./types").Trigger> = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("cron"), schedule: z.string() }),
+  z.object({ type: z.literal("interval"), everyMs: z.number().int().positive() }),
+  z.object({ type: z.literal("mode"), from: z.enum(MODE_VALUES), to: z.enum(MODE_VALUES) }),
+  z.object({
+    type: z.literal("sensor"),
+    sensor: SensorKeySchema,
+    operator: z.enum([">", "<", "==", ">=", "<="]),
+    value: z.number(),
+  }),
+  z.object({ type: z.literal("event"), event: z.string() }),
+  z.object({ type: z.literal("composite"), all: z.lazy(() => z.array(TriggerSchema)) }),
+]);
+
+export const ConditionSchema = z.object({
+  field: z.enum(["mode", "temperature", "humidity", "pressure", "motion", "time", "dayOfWeek", "lastMotionAgoMs"]),
+  operator: z.enum(["==", "!=", ">", "<", ">=", "<=", "in"]),
+  value: z.union([z.string(), z.number(), z.array(z.string())]),
+});
+
+export const RuleActionSchema: z.ZodType<import("./types").RuleAction> = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("set_mode"), mode: z.enum(MODE_VALUES) }),
+  z.object({ type: z.literal("set_lcd"), line1: z.string().max(16), line2: z.string().max(16) }),
+  z.object({ type: z.literal("play_chime"), preset: z.enum(["morning", "alert", "chime"]) }),
+  z.object({ type: z.literal("mqtt_publish"), topic: z.string(), payload: z.record(z.unknown()) }),
+  z.object({ type: z.literal("notify"), event: z.string(), context: z.record(z.unknown()).optional() }),
+  z.object({ type: z.literal("chain"), actions: z.lazy(() => z.array(RuleActionSchema)) }),
+]);
+
+export const RuleSchema = z.object({
+  id: z.string(),
+  enabled: z.boolean(),
+  priority: z.number().int().min(0),
+  source: z.enum(["static", "dynamic"]),
+  cooldownMs: z.number().int().min(0),
+  trigger: TriggerSchema,
+  condition: z.array(ConditionSchema).optional(),
+  action: RuleActionSchema,
+  lastFiredAt: z.number().optional(),
+});
+
 // ── MCP Event Method Names ──────────────────────────────────────────
 // Used by core.ts to send notifications over MCP stdio transport.
 export const MCP_EVENTS = {
@@ -271,6 +316,9 @@ export const MCP_EVENTS = {
   voice_end: "xentient/voice_end",
   mode_changed: "xentient/mode_changed",
   sensor_update: "xentient/sensor_update",
+  rule_triggered: "xentient/rule_triggered",
+  brain_connected: "xentient/brain_connected",
+  brain_disconnected: "xentient/brain_disconnected",
 } as const;
 
 // ── Export all schemas for JSON-Schema generation ────────────────────
