@@ -5,7 +5,6 @@ import pino from 'pino';
 
 const logger = pino({ name: 'mqtt-client' });
 
-export interface VADEvent { type: 'start' | 'end'; nodeId: string; timestamp: number; }
 export interface SensorData { temp: number; humidity: number; nodeId: string; }
 export interface HeartbeatData { nodeId: string; uptime: number; peripherals: string[]; }
 
@@ -32,7 +31,6 @@ export class MqttClient extends EventEmitter {
         'xentient/control/pack',
         'xentient/sensors/env',
         'xentient/sensors/motion',
-        'xentient/sensors/vad',
         'xentient/status/mode',
         'xentient/pipeline/state',
         'xentient/session/complete',
@@ -73,11 +71,7 @@ export class MqttClient extends EventEmitter {
       const data = JSON.parse(payload.toString());
       logger.debug({ topic, type: data.type }, 'Message received');
 
-      if (topic === 'xentient/sensors/vad') {
-        // Firmware publishes { payload: { type: 'start'|'end', nodeId, timestamp } }
-        const p = data.payload ?? data;
-        this.emit('vad', { type: p.type, nodeId: p.nodeId, timestamp: p.timestamp } as VADEvent);
-      } else if (topic === 'xentient/sensors/env' || topic === 'xentient/sensors/motion') {
+      if (topic === 'xentient/sensors/env' || topic === 'xentient/sensors/motion') {
         this.emit('sensor', data);
       } else if (topic === 'xentient/pipeline/state') {
         this.emit('pipelineState', data);
