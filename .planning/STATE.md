@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-04-28T14:55:00.000Z"
+last_updated: "2026-04-28T15:20:00.000Z"
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 20
-  completed_plans: 9
-  percent: 45
+  completed_plans: 10
+  percent: 50
 ---
 
 # Project State: Xentient
@@ -19,7 +19,7 @@ progress:
 See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-19)
 
 **Core value:** The IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room.
-**Current focus:** Phase 8 (Web Console + Dashboard) in progress — 08-01 REST API Expansion complete (16 new endpoints). Next: Execute 08-02 SSE Event Expansion.
+**Current focus:** Phase 8 (Web Console + Dashboard) in progress — 08-02 SSE Event Expansion complete (10 new event types, throttled sensor, counter interval). Next: Wave 2 frontend plans (08-03 through 08-06).
 
 ## Active Context
 
@@ -59,6 +59,9 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 - PATCH allowlist: 9 patchable skill fields (enabled, displayName, trigger, actions, priority, cooldownMs, modeFilter, escalation, collect); forbidden: id, source, fireCount, escalationCount
 - POST skill collision returns 409 (REST explicit), not MCP silent overwrite
 - /api/skill-log path chosen over /api/skills/log to avoid :id route collision
+- Phase 8 plan 02 complete: 10 new SSE event types (skill_registered/removed/updated, pack_loaded/unloaded, event_mapping_added/removed, sensor_update, counter_update, mode_change), throttled sensor broadcast (1s), counter interval lifecycle (Expansion 2.2), broadcastSkillEvent renamed to broadcastSSE
+- mode_change emitted alongside modeChange (modeChange for EventBridge/SpaceManager internal, mode_change with timestamp for SSE dashboard)
+- Counter interval optimization: starts on first skill with collect[], stops on last removal — no CPU waste when no collectors active
 
 ## Roadmap Evolution
 
@@ -77,6 +80,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 06 | 01-05 | ~3h | 5 waves | 10+ |
 | 08 | 07 | 31min | 4 | 7 |
 | 08 | 01 | 21min | 2 | 2 |
+| 08 | 02 | 34min | 8 | 8 |
 
 ### Quick Tasks Completed
 
@@ -88,4 +92,4 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 260420-4do | Mode Manager wired into Core | 2026-04-20 | d21750b | [260420-4do-xentient-ifd](.planning/quick/260420-4do-xentient-ifd/) |
 
 ---
-*State updated: 2026-04-28 (Phase 8 plan 01 complete. 16 REST endpoints. Next: 08-02 SSE Event Expansion.)*
+*State updated: 2026-04-28 (Phase 8 plan 02 complete. 10 new SSE events. Wave 1 backend done. Next: Wave 2 frontend.)*
