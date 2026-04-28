@@ -1,10 +1,10 @@
 ---
 phase: 8
 name: Web Console + Dashboard
-status: not_started
+status: complete
 depends_on: [6, 7]
 plans_total: 8
-plans_complete: 0
+plans_complete: 8
 hard_points: 8
 ---
 
