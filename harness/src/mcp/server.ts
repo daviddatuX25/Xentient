@@ -200,6 +200,40 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
     async (params: { execute: string[]; skip: string[]; reason: string; conflictGroup: string }) => handlers.xentient_resolve_conflict(params),
   );
 
+  // ============================================================
+  // EVENT BRIDGE TOOLS — Phase 7 Plan 07-02
+  // Runtime mapping registration/removal for the EventBridge
+  // ============================================================
+
+  server.tool(
+    'xentient_register_event_mapping',
+    'Register a custom event mapping that routes MQTT or mode events to skill events',
+    {
+      source: z.string().describe('Event source: mqtt:sensor, mqtt:triggerPipeline, or mode'),
+      eventName: z.string().describe('Target skill event name (e.g., motion_detected, sensor_update)'),
+      filter: z.string().optional().describe('JS expression string for filtering (e.g., "data.peripheralType === 0x12")'),
+      transform: z.string().optional().describe('JS expression string for transforming event data (e.g., "{ payload: data.payload, timestamp: Date.now() }")'),
+    } as any,
+    async ({ source, eventName, filter, transform }: { source: string; eventName: string; filter?: string; transform?: string }) =>
+      handlers.xentient_register_event_mapping({ source, eventName, filter, transform }),
+  );
+
+  server.tool(
+    'xentient_remove_event_mapping',
+    'Remove an event mapping by its ID',
+    {
+      mappingId: z.string().describe('The mapping ID to remove'),
+    } as any,
+    async ({ mappingId }: { mappingId: string }) => handlers.xentient_remove_event_mapping({ mappingId }),
+  );
+
+  server.tool(
+    'xentient_list_event_mappings',
+    'List all current event mappings (default and custom)',
+    {} as any,
+    async () => handlers.xentient_list_event_mappings(),
+  );
+
   // Wire push-based events from Core subsystems -> Brain
   wireMcpEvents(server, deps.mqtt, deps.modeManager, deps.sensorCache);
 

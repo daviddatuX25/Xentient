@@ -6,11 +6,12 @@ import { MqttClient } from "./comms/MqttClient";
 import { AudioServer } from "./comms/AudioServer";
 import { CameraServer } from "./comms/CameraServer";
 import { ControlServer } from "./comms/ControlServer";
+import { EventBridge } from "./comms/EventBridge";
 import { ModeManager } from "./engine/ModeManager";
 import { SpaceManager } from "./engine/SpaceManager";
 import { startMcpServer } from "./mcp/server";
 import type { SensorCache, Space } from "./shared/types";
-import { MCP_EVENTS, PERIPHERAL_IDS, PROTOCOL_VERSION } from "./shared/contracts";
+import { MCP_EVENTS, PROTOCOL_VERSION } from "./shared/contracts";
 import pino from "pino";
 
 const logger = pino({ name: "xentient-core" }, process.stderr);
@@ -50,7 +51,7 @@ async function main() {
   // Start MCP server (stdio transport - brain processes connect here)
   // Mutable ref pattern: create deps object first, pass to startMcpServer,
   // then assign spaceManager after both mcpServer and spaceManager exist.
-  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager } = {
+  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge } = {
     mqtt,
     audio: audioServer,
     camera: cameraServer,
@@ -135,33 +136,17 @@ async function main() {
     }
   });
 
-  // --- Forward MQTT events to SkillExecutor via SpaceManager ---
-  // PIR motion -> skill event
-  mqtt.on("sensor", (data: unknown) => {
-    const d = data as { peripheralType?: number; payload?: { motion?: boolean } };
-    if (d.peripheralType === PERIPHERAL_IDS.PIR && d.payload?.motion) {
-      spaceManager.handleEvent('motion_detected', { nodeId: mqtt.nodeId, timestamp: Date.now() });
-    }
-    // BME280 sensor update -> skill event
-    if (d.peripheralType === PERIPHERAL_IDS.BME280) {
-      spaceManager.handleEvent('sensor_update', { payload: d.payload, timestamp: Date.now() });
-    }
-  });
+  // --- EventBridge: declarative MQTT/Mode → Skill event routing ---
+  const eventBridge = new EventBridge(mqtt, spaceManager, modeManager);
+  eventBridge.start();
 
-  // Voice triggers -> skill event
-  mqtt.on("triggerPipeline", (data: unknown) => {
-    const d = data as { source?: string; stage?: string };
-    if (d.source === "voice") {
-      const eventName = d.stage === "start" ? "voice_start" : "voice_end";
-      spaceManager.handleEvent(eventName, { timestamp: Date.now() });
-    }
-  });
+  // Wire eventBridge into MCP deps (for runtime mapping tools)
+  mcpDeps.eventBridge = eventBridge;
 
   // Keep SpaceMode in sync when ModeManager transitions hardware state
   modeManager.on("modeChange", ({ from, to }) => {
-    spaceManager.handleEvent('mode_transition', { from, to, timestamp: Date.now() });
     spaceManager.updateSpaceMode('default', to);
-    logger.info({ from, to }, 'Mode transition — SpaceMode synced + skill event forwarded');
+    logger.info({ from, to }, 'Mode transition — SpaceMode synced');
   });
 
   // Control server - HTTP API + static files + SSE for browser test page
@@ -188,6 +173,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down gracefully...");
+    eventBridge.stop();
     spaceManager.stopAll();
     logger.info("SpaceManager stopped — all SkillExecutors shut down");
     modeManager.clearIdleTimer();

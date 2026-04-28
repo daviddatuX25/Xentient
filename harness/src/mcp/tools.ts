@@ -2,6 +2,7 @@
 import type { MqttClient } from "../comms/MqttClient";
 import type { AudioServer } from "../comms/AudioServer";
 import type { CameraServer } from "../comms/CameraServer";
+import type { EventBridge } from "../comms/EventBridge";
 import type { ModeManager } from "../engine/ModeManager";
 import type { SpaceManager } from "../engine/SpaceManager";
 import type { SensorCache, CoreSkill } from "../shared/types"; // RF-5: moved from here to shared to avoid comms↔mcp circular dep
@@ -17,6 +18,7 @@ export interface McpToolDeps {
   modeManager: ModeManager;
   sensorCache: SensorCache;
   spaceManager?: SpaceManager; // SKILL TOOLS: wired in Wave 4 (core.ts)
+  eventBridge?: EventBridge; // EVENT BRIDGE TOOLS: wired in core.ts
 }
 
 // NOTE: SensorCache interface is defined in src/shared/types.ts (Task 0.5) — do NOT redefine here
@@ -198,6 +200,60 @@ export function createToolHandlers(deps: McpToolDeps) {
       if (!deps.spaceManager) return { content: [{ type: 'text' as const, text: 'SpaceManager not initialized' }], isError: true as const };
       deps.spaceManager.resolveConflict(resolution);
       return { content: [{ type: 'text' as const, text: `Conflict resolved: executing [${resolution.execute.join(', ')}]` }] };
+    },
+
+    // ============================================================
+    // EVENT BRIDGE TOOLS — Phase 7 Plan 07-02
+    // Runtime mapping registration/removal for the EventBridge
+    // ============================================================
+
+    xentient_register_event_mapping: async ({ source, eventName, filter, transform }: {
+      source: string;
+      eventName: string;
+      filter?: string;
+      transform?: string;
+    }) => {
+      if (!deps.eventBridge) return { content: [{ type: 'text' as const, text: 'EventBridge not initialized' }], isError: true as const };
+      // Filter/transform are JS expression strings eval'd via new Function.
+      // This is only callable by Brain-side MCP (trusted), not user input.
+      // Future improvement: replace with a safe expression evaluator.
+      let filterFn: ((data: unknown) => boolean) | undefined;
+      let transformFn: ((data: unknown) => Record<string, unknown>) | undefined;
+      try {
+        if (filter) {
+          const fn = new Function('data', `"use strict"; return (${filter});`);
+          filterFn = (d: unknown) => !!fn(d);
+        }
+        if (transform) {
+          const fn = new Function('data', `"use strict"; return (${transform});`);
+          transformFn = (d: unknown) => fn(d) as Record<string, unknown>;
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: `Invalid filter/transform expression: ${err}` }) }],
+          isError: true as const,
+        };
+      }
+      const mappingId = deps.eventBridge.addCustomMapping(source as any, eventName, filterFn, transformFn);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, mappingId }) }] };
+    },
+
+    xentient_remove_event_mapping: async ({ mappingId }: { mappingId: string }) => {
+      if (!deps.eventBridge) return { content: [{ type: 'text' as const, text: 'EventBridge not initialized' }], isError: true as const };
+      const removed = deps.eventBridge.removeMapping(mappingId);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: removed, mappingId }) }] };
+    },
+
+    xentient_list_event_mappings: async () => {
+      if (!deps.eventBridge) return { content: [{ type: 'text' as const, text: 'EventBridge not initialized' }], isError: true as const };
+      const mappings = deps.eventBridge.listMappings().map(m => ({
+        id: m.id,
+        source: m.source,
+        eventName: m.eventName,
+        hasFilter: !!m.filter,
+        hasTransform: !!m.transform,
+      }));
+      return { content: [{ type: 'text' as const, text: JSON.stringify(mappings, null, 2) }] };
     },
   };
 }

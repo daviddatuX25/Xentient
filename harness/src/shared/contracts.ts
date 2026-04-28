@@ -307,3 +307,10 @@ export const SKILL_LOG_CAPACITY = 1000;
 
 // Conflict resolution timeout (ms) — fall back to priority if Brain doesn't respond
 export const CONFLICT_TIMEOUT_MS = 10_000;
+
+// ── Event Bridge MCP Tool names ─────────────────────────────────────
+export const EVENT_BRIDGE_TOOLS = {
+  REGISTER_MAPPING: 'xentient_register_event_mapping',
+  REMOVE_MAPPING: 'xentient_remove_event_mapping',
+  LIST_MAPPINGS: 'xentient_list_event_mappings',
+} as const;
