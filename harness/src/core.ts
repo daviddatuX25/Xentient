@@ -13,9 +13,10 @@ import { ModeManager } from "./engine/ModeManager";
 import { SpaceManager } from "./engine/SpaceManager";
 import { SkillPersistence } from "./engine/SkillPersistence";
 import { PackLoader } from "./engine/PackLoader";
+import { SensorHistory } from "./engine/SensorHistory";
 import { startMcpServer } from "./mcp/server";
 import type { SensorCache, Space } from "./shared/types";
-import { MCP_EVENTS, PROTOCOL_VERSION } from "./shared/contracts";
+import { MCP_EVENTS, PROTOCOL_VERSION, PERIPHERAL_IDS } from "./shared/contracts";
 import pino from "pino";
 
 const logger = pino({ name: "xentient-core" }, process.stderr);
@@ -193,9 +194,33 @@ async function main() {
     }
   }
 
+  // --- SensorHistory: ring buffer for sensor readings (5min window) ---
+  const sensorHistory = new SensorHistory();
+  // Push sensor cache snapshots into history on each BME280 reading
+  mqtt.on("sensor", (data: unknown) => {
+    const d = data as { peripheralType?: number };
+    if (d.peripheralType === PERIPHERAL_IDS.BME280) {
+      sensorHistory.push(sensorCache);
+    }
+  });
+
   // Control server - HTTP API + static files + SSE for browser test page
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
-  const controlServer = new ControlServer(controlPort, mqtt, modeManager, cameraServer, sensorCache);
+  const controlServer = new ControlServer(
+    {
+      mqtt,
+      modeManager,
+      cameraServer,
+      sensorCache,
+      sensorHistory,
+      spaceManager,
+      eventBridge,
+      packLoader,
+      skillLog: spaceManager.skillLog,
+      getBrainConnected: () => true, // v1: stdio transport always connected
+    },
+    controlPort,
+  );
 
   // Relay SkillExecutor observability events to dashboard via SSE
   spaceManager.on('skill_fired', (event: any) => {

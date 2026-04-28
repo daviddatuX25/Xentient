@@ -5,7 +5,7 @@ import config from "../config/default.json";
 import { MqttClient } from "./comms/MqttClient";
 import { AudioServer } from "./comms/AudioServer";
 import { CameraServer } from "./comms/CameraServer";
-import { ControlServer } from "./comms/ControlServer";
+import { ControlServer, type ControlServerDeps } from "./comms/ControlServer";
 import { DeepgramProvider } from "./providers/stt/DeepgramProvider";
 import { WhisperProvider } from "./providers/stt/WhisperProvider";
 import { ElevenLabsProvider } from "./providers/tts/ElevenLabsProvider";
@@ -47,9 +47,10 @@ function createTTSProvider(): TTSProvider {
 }
 
 function createLLMProvider(): LLMProvider {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY not set");
-  return new OpenAIProvider(key, config.llm.model);
+  const key = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("LLM_API_KEY or OPENAI_API_KEY not set");
+  const baseURL = process.env.LLM_BASE_URL;
+  return new OpenAIProvider(key, process.env.LLM_MODEL ?? config.llm.model, baseURL);
 }
 
 async function main() {
@@ -92,8 +93,21 @@ async function main() {
   cameraServer.on("cameraOffline", () => logger.warn("Camera stream offline — no frames for 10s"));
 
   // Control server — HTTP API + static files + SSE for browser test page
+  // Basic entry point: stub deps that require SpaceManager/PackLoader/etc.
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
-  const controlServer = new ControlServer(controlPort, mqtt, modeManager, cameraServer, sensorCache);
+  const controlServerDeps: ControlServerDeps = {
+    mqtt,
+    modeManager,
+    cameraServer,
+    sensorCache,
+    sensorHistory: { query: () => [] },  // Stub — basic mode has no sensor history
+    spaceManager: { listSkills: () => [], skillLog: { append: () => {}, query: () => [], attachEscalationResponse: () => {} } } as any,
+    eventBridge: { start: () => {}, stop: () => {}, listMappings: () => [], addCustomMapping: () => "", removeMapping: () => false, handleMqttEvent: () => {}, forwardModeEvent: () => {}, register: () => {} } as any,
+    packLoader: { loadPack: () => {}, unloadCurrentPack: () => {}, getLoadedPack: () => null, listAvailablePacks: () => [], reload: () => {} } as any,
+    skillLog: { append: () => {}, query: () => [], attachEscalationResponse: () => {} } as any,
+    getBrainConnected: () => false,  // Basic mode has no brain connection
+  };
+  const controlServer = new ControlServer(controlServerDeps, controlPort);
   await controlServer.start();
 
   logger.info({ wsPort: config.audio.wsPort, cameraPort: config.camera.wsPort, controlPort, mqtt: config.mqtt.brokerUrl }, "Core ready — open http://localhost:" + controlPort);

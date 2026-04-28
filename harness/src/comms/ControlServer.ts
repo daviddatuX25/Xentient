@@ -29,13 +29,18 @@ const MIME_TYPES: Record<string, string> = {
   ".ttf": "font/ttf",
 };
 
+/** Structural type for SensorHistory dependency (decoupled from concrete class). */
+export interface SensorHistoryLike {
+  query(since?: number): { temperature: number | null; humidity: number | null; pressure: number | null; timestamp: number }[];
+}
+
 /** All ControlServer dependencies injected through a single object (same pattern as McpToolDeps). */
 export interface ControlServerDeps {
   mqtt: MqttClient;
   modeManager: ModeManager;
   cameraServer: CameraServer;
   sensorCache: SensorCache;
-  sensorHistory: SensorHistory;
+  sensorHistory: SensorHistoryLike;
   spaceManager: SpaceManager;
   eventBridge: EventBridge;
   packLoader: PackLoader;
@@ -43,13 +48,6 @@ export interface ControlServerDeps {
   getBrainConnected: () => boolean;
 }
 
-/**
- * Ring buffer interface for sensor/mode/motion history.
- * Injected so ControlServer doesn't own the data lifecycle.
- */
-export interface SensorHistory {
-  query(since?: number): { temperature: number; humidity: number; pressure: number; timestamp: number }[];
-}
 
 export class ControlServer extends EventEmitter {
   private deps: ControlServerDeps;
