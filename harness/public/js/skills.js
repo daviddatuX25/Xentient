@@ -337,7 +337,7 @@ export class SkillManagerPanel {
       showToast(`Skill "${formData.id}" registered`, 'success');
       this.clearForm();
     } catch (err) {
-      if (err.message && err.message.includes('409')) {
+      if (err.status === 409) {
         showToast(`Skill "${formData.id}" already exists. Use edit instead.`, 'error');
       } else {
         showToast(`Error: ${err.message}`, 'error');
@@ -360,7 +360,7 @@ export class SkillManagerPanel {
       showToast(`Skill "${parsed.id}" registered`, 'success');
       this.clearForm();
     } catch (err) {
-      if (err.message && err.message.includes('409')) {
+      if (err.status === 409) {
         showToast(`Skill "${parsed.id}" already exists. Use edit instead.`, 'error');
       } else {
         showToast(`Error: ${err.message}`, 'error');
