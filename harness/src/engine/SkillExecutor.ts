@@ -84,6 +84,11 @@ export class SkillExecutor extends EventEmitter {
 
   getMode(): string { return this.activeMode; }
 
+  /** Return a snapshot of all counter values. */
+  getCounters(): Record<string, number> {
+    return Object.fromEntries(this.counters);
+  }
+
   registerSkill(skill: CoreSkill): void {
     this.skills.set(skill.id, { ...skill, fireCount: 0, escalationCount: 0 });
     this.setupSkillSchedule(skill);

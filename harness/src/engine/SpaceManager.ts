@@ -149,6 +149,14 @@ export class SpaceManager extends EventEmitter {
     return all;
   }
 
+  /** Return counter snapshot from the first (or specified) executor. */
+  getCounters(spaceId?: string): Record<string, number> {
+    const executor = spaceId
+      ? this.getExecutor(spaceId)
+      : this.executors.values().next().value;
+    return executor?.getCounters() ?? {};
+  }
+
   switchMode(spaceId: string, newMode: string): boolean {
     const executor = this.getExecutor(spaceId);
     if (!executor) return false;
