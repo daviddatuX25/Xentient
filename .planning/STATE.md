@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: complete
-last_updated: "2026-04-28T08:30:00.000Z"
+status: in_progress
+last_updated: "2026-04-28T10:00:00.000Z"
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 4
-  total_plans: 7
+  total_plans: 12
   completed_plans: 7
-  percent: 100
+  percent: 58
 ---
 
 # Project State: Xentient
@@ -19,7 +19,7 @@ progress:
 See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-19)
 
 **Core value:** The IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room.
-**Current focus:** Phases 1+5+6 complete. Next: Fix PIR wake bug (9id) then P3-ASSY breadboard assembly.
+**Current focus:** Phase 7 (Skill Engine Hardening) planned — 5 plans written. Next: Execute 07-01 Gap Fixes.
 
 ## Active Context
 
@@ -49,6 +49,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 - Demo scope reduced: breadboard prototype filming, no furnished casing required
 - P3-ASSY merged with 03-07: single hardware assembly task, breadboard scope only
 - Phase 6 complete: CoreSkill types, SkillExecutor, SpaceManager, MCP tools, core wiring, 34 tests — all waves shipped
+- Phase 7 planned: 6 gaps identified (G1-G6), 5 plans written (07-01 through 07-05), 5 design decisions locked
 - Phase 1 confirmed complete: firmware (MQTT, LCD, mic, VAD, WS audio, camera relay, BME280, PIR ISR) all built and validated
 - Platform Track P3/P4 already built as part of Phase 6 (ModeManager + SpaceManager)
 - Roadmap + beads audited and aligned with actual project state
@@ -79,4 +80,4 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 260420-4do | Mode Manager wired into Core | 2026-04-20 | d21750b | [260420-4do-xentient-ifd](.planning/quick/260420-4do-xentient-ifd/) |
 
 ---
-*State updated: 2026-04-28 (Phase 1+5+6 complete. P3/P4 built. Beads audited.)*
+*State updated: 2026-04-28 (Phase 7 planned. 5 plans: 07-01 to 07-05. Next: Execute gap fixes.)*

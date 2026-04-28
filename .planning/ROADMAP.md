@@ -14,6 +14,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 4: Optimization & Demo Prep | Latency + prototype video demo | Not started |
 | 5: Doc Architecture Refactor | Restructure docs to bridge model | Complete |
 | 6: Xentient Layers | CoreSkill, SkillExecutor, SpaceManager, MCP tools | Complete |
+| 7: Skill Engine Hardening | Gap fixes (G1-G6) + Pack Loader + Skill Persistence | In Progress |
 
 **Phase 2 Note:** **Phase 2 is SUPERSEDED.** The n8n-style orchestration vision has been replaced by the bridge model (see docs/VISION.md). The custom memory layer (MEM-01/02/03) will be replaced by Hermes+Mem0 integration in Platform Track P1-P2. Phase 2 deliverables that still ship in the demo (voice pipeline, MQTT bridge, basic memory) are carried forward as-is.
 
@@ -120,6 +121,32 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 - [x] 06-04: Wire SpaceManager into `core.ts` — default Space, MQTT forwarding, SSE relay
 - [x] 06-05: Vitest tests for SkillLog, SkillExecutor, SpaceManager
 
+### Phase 7: Skill Engine Hardening + Pack Integration
+**Goal**: Close all Phase 6 gaps (G1–G6) and add Pack-based skill loading + persistence.
+**Depends on**: Phase 6
+**Requirements**: PT-03, PT-04
+**Design Decisions**:
+  - D1: Remove `_idle-sleep` (ModeManager owns idle→sleep; avoids infinite loop with _pir-wake)
+  - D2: Mode triggers fire on SpaceMode (hardware state), not BehavioralMode
+  - D3: Phase 8 (Dashboard) waits for Phase 3 (Laravel scaffold)
+  - D4: Pack skill format = simplified subset, PackLoader expands to CoreSkill
+  - D5: Counter auto-reset uses `DataCollector.resetAfterMs` (already typed, needs impl)
+**Success Criteria**:
+  1. `{ type: 'mode', from: 'sleep', to: 'listen' }` trigger fires on SpaceMode transition.
+  2. `{ type: 'composite', all: [...] }` trigger evaluates all sub-triggers with AND logic.
+  3. `modeFilter: 'student'` prevents skill from firing in non-matching behavioral mode.
+  4. `_idle-sleep` removed; ModeManager idle timer sole owner of listen→sleep.
+  5. DataCollector auto-collects + auto-resets counters after `resetAfterMs`.
+  6. Custom MQTT topic → named event mappings registerable via MCP (no core.ts edits).
+  7. Skills loaded from `packs/default/skills.json` appear in `xentient_list_skills`.
+  8. Brain-registered skills persist across Core restart.
+**Plans**: 5 plans
+- [ ] 07-01: Gap Fixes — mode triggers, composite evaluation, modeFilter, remove _idle-sleep, DataCollector
+- [ ] 07-02: Generic MQTT Event Bridge — configurable event routing, no hardcoding
+- [ ] 07-03: Pack Skill Loader — PackSkillManifest, Zod validation, hot-reload
+- [ ] 07-04: Skill Persistence — var/skills.json, brain skills survive restart
+- [ ] 07-05: Tests — Vitest for all gap fixes + EventBridge + PackLoader + Persistence
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -130,6 +157,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 4. Optimization | 0/1 | Not started | - |
 | 5. Doc Refactor | 3/3 | Complete | 05-01, 05-02, 05-03 |
 | 6. Xentient Layers | 5/5 | Complete | 06-01 through 06-05 |
+| 7. Skill Engine Hardening | 0/5 | In Progress | - |
 
 ## Document Architecture
 
@@ -143,4 +171,4 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 
 ---
 *Roadmap defined: 2026-04-13*
-*Last updated: 2026-04-28 — Phase 1+5+6 complete. Platform Track P3/P4 built. P0 bug: PIR wake (9id). Next: P3-ASSY breadboard assembly (p5v).*
+*Last updated: 2026-04-28 — Phase 7 planned (5 plans). Phase 1+5+6 complete. Next: 07-01 Gap Fixes.*
