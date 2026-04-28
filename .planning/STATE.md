@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-04-28T14:26:00.000Z"
+last_updated: "2026-04-28T14:55:00.000Z"
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 20
-  completed_plans: 8
-  percent: 40
+  completed_plans: 9
+  percent: 45
 ---
 
 # Project State: Xentient
@@ -19,7 +19,7 @@ progress:
 See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-19)
 
 **Core value:** The IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room.
-**Current focus:** Phase 8 (Web Console + Dashboard) in progress — 08-07 ControlServer refactoring complete. Next: Execute 08-01 REST API Expansion.
+**Current focus:** Phase 8 (Web Console + Dashboard) in progress — 08-01 REST API Expansion complete (16 new endpoints). Next: Execute 08-02 SSE Event Expansion.
 
 ## Active Context
 
@@ -55,6 +55,10 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 - Roadmap + beads audited and aligned with actual project state
 - Phase 8 added: Web Console + Dashboard — single-page HTML/JS dashboard served by ControlServer (NOT Laravel for v1), 8 plans (08-01 through 08-08)
 - Phase 8 plan 07 complete: ControlServer refactored with MicroRouter route table, ControlServerDeps DI, 64KB body limit, static file fallthrough, SensorHistory ring buffer stub
+- Phase 8 plan 01 complete: 16 REST endpoints (Skills 6, Packs 3, Spaces 2, Event Mappings 3, Sensor History 1, Config 1), PATCH allowlist, 409 conflict, 403 protected-delete, 32 tests
+- PATCH allowlist: 9 patchable skill fields (enabled, displayName, trigger, actions, priority, cooldownMs, modeFilter, escalation, collect); forbidden: id, source, fireCount, escalationCount
+- POST skill collision returns 409 (REST explicit), not MCP silent overwrite
+- /api/skill-log path chosen over /api/skills/log to avoid :id route collision
 
 ## Roadmap Evolution
 
@@ -72,6 +76,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 05 | 03 | 10 min | 2 | 7 |
 | 06 | 01-05 | ~3h | 5 waves | 10+ |
 | 08 | 07 | 31min | 4 | 7 |
+| 08 | 01 | 21min | 2 | 2 |
 
 ### Quick Tasks Completed
 
@@ -83,4 +88,4 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 260420-4do | Mode Manager wired into Core | 2026-04-20 | d21750b | [260420-4do-xentient-ifd](.planning/quick/260420-4do-xentient-ifd/) |
 
 ---
-*State updated: 2026-04-28 (Phase 7 planned. 5 plans: 07-01 to 07-05. Next: Execute gap fixes.)*
+*State updated: 2026-04-28 (Phase 8 plan 01 complete. 16 REST endpoints. Next: 08-02 SSE Event Expansion.)*
