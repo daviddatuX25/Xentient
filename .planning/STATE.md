@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-04-28T10:00:00.000Z"
+last_updated: "2026-04-28T20:30:00.000Z"
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 4
-  total_plans: 12
+  total_plans: 20
   completed_plans: 7
-  percent: 58
+  percent: 35
 ---
 
 # Project State: Xentient
@@ -53,6 +53,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 - Phase 1 confirmed complete: firmware (MQTT, LCD, mic, VAD, WS audio, camera relay, BME280, PIR ISR) all built and validated
 - Platform Track P3/P4 already built as part of Phase 6 (ModeManager + SpaceManager)
 - Roadmap + beads audited and aligned with actual project state
+- Phase 8 added: Web Console + Dashboard — single-page HTML/JS dashboard served by ControlServer (NOT Laravel for v1), 8 plans (08-01 through 08-08)
 
 ## Roadmap Evolution
 

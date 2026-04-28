@@ -15,6 +15,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 5: Doc Architecture Refactor | Restructure docs to bridge model | Complete |
 | 6: Xentient Layers | CoreSkill, SkillExecutor, SpaceManager, MCP tools | Complete |
 | 7: Skill Engine Hardening | Gap fixes (G1-G6) + Pack Loader + Skill Persistence | **Complete** |
+| 8: Web Console + Dashboard | Single-page HTML/JS dashboard served by ControlServer (NOT Laravel for v1) | Not started |
 
 **Phase 2 Note:** **Phase 2 is SUPERSEDED.** The n8n-style orchestration vision has been replaced by the bridge model (see docs/VISION.md). The custom memory layer (MEM-01/02/03) will be replaced by Hermes+Mem0 integration in Platform Track P1-P2. Phase 2 deliverables that still ship in the demo (voice pipeline, MQTT bridge, basic memory) are carried forward as-is.
 
@@ -147,6 +148,38 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 - [x] 07-04: Skill Persistence — var/skills.json, brain skills survive restart
 - [x] 07-05: Tests — Vitest for all gap fixes + EventBridge + PackLoader + Persistence
 
+### Phase 8: Web Console + Dashboard
+**Goal**: Ship a fully operational Web Console as the operator's control surface for everything Core has built (Phases 1-7). Single-page HTML/JS dashboard served by ControlServer (NOT Laravel for v1).
+**Depends on**: Phase 6, Phase 7
+**Design Decisions**:
+  - D1: NOT Laravel for v1 — ControlServer serves static dashboard (avoids PHP runtime, MQTT duplication, data sync)
+  - D2: Zero-dependency route table — micro-router in ControlServer (no Express/Hono import)
+  - D3: Vanilla JS + CSS frontend — no React/Vue/Svelte (served as static files from public/)
+  - D4: SSE for server→browser push — unidirectional sufficient; Reverb WebSocket deferred to Platform v2
+  - D5: SensorHistory ring buffer — 5min window, 300 entries at 1/s, seeded on first load
+  - D6: SpaceMode = "Hardware Mode", BehavioralMode = "Skill Profile" in UI labels (H6 disambiguation)
+  - D7: REST API contract matches future Laravel consumption — nothing wasted when Platform v2 arrives
+**Success Criteria**:
+  1. Dashboard loads at `http://localhost:3000` with overview, skill manager, telemetry, and mode control panels.
+  2. All 4 mode switch buttons work — mode badge updates within 200ms via SSE.
+  3. Operator can register, update, enable/disable, and remove skills entirely from the browser.
+  4. Sensor gauges show live temperature, humidity, and pressure readings from BME280.
+  5. Skill fire events appear in the event feed within 1 tick of the skill firing.
+  6. Escalation and conflict events are clearly displayed with priority color-coding.
+  7. Pack switching works from the UI — skill list updates to reflect new pack's skills.
+  8. State machine diagram shows current mode and valid transitions.
+  9. Dashboard reconnects automatically after Core restart (SSE reconnection + state re-fetch).
+  10. Mobile responsive — functional on a phone screen via tunnel URL.
+**Plans**: 8 plans
+- [ ] 08-01: Core REST API Expansion — ~15 new endpoints exposing Phase 6-7 subsystems
+- [ ] 08-02: SSE Event Expansion — 8 new event types for real-time dashboard updates
+- [ ] 08-03: Dashboard Overview Panel — system status, sensor gauges, active skills, quick actions
+- [ ] 08-04: Skill Manager Panel — CRUD interface, pack management, event mappings
+- [ ] 08-05: Live Telemetry & Event Feed — sparklines, motion timeline, skill fire log, escalation feed
+- [ ] 08-06: Mode & Space Control Panel — state machine diagram, behavioral mode selector
+- [ ] 08-07: ControlServer Refactoring — route table pattern, dependency injection, Zod validation
+- [ ] 08-08: Integration Testing + Polish — E2E verification, loading states, error toasts, keyboard nav
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -158,6 +191,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 5. Doc Refactor | 3/3 | Complete | 05-01, 05-02, 05-03 |
 | 6. Xentient Layers | 5/5 | Complete | 06-01 through 06-05 |
 | 7. Skill Engine Hardening | 5/5 | Complete | 07-01 through 07-05 |
+| 8. Web Console + Dashboard | 0/8 | Not started | - |
 
 ## Document Architecture
 
@@ -171,4 +205,4 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 
 ---
 *Roadmap defined: 2026-04-13*
-*Last updated: 2026-04-28 — Phase 7 complete (5/5 plans). Phase 1+5+6+7 complete. Next: Phase 3.*
+*Last updated: 2026-04-28 — Phase 8 added (Web Console + Dashboard, 8 plans). Phase 1+5+6+7 complete. Next: Phase 8 planning.*
