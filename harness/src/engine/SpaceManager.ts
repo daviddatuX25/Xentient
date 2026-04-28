@@ -92,32 +92,48 @@ export class SpaceManager extends EventEmitter {
     } else {
       this.getExecutor(skill.spaceId)?.registerSkill(skill);
     }
+    this.emit('skill_registered', { skillId: skill.id, source: skill.source, triggerType: skill.trigger.type });
   }
 
   updateSkill(skillId: string, patch: Partial<CoreSkill>, spaceId?: string): boolean {
-    if (spaceId) return this.getExecutor(spaceId)?.updateSkill(skillId, patch) ?? false;
+    if (spaceId) {
+      const updated = this.getExecutor(spaceId)?.updateSkill(skillId, patch) ?? false;
+      if (updated) this.emit('skill_updated', { skillId, patch });
+      return updated;
+    }
     let changed = false;
     for (const [, ex] of this.executors) {
       if (ex.updateSkill(skillId, patch)) changed = true;
     }
+    if (changed) this.emit('skill_updated', { skillId, patch });
     return changed;
   }
 
   disableSkill(skillId: string, enabled: boolean, spaceId?: string): boolean {
-    if (spaceId) return this.getExecutor(spaceId)?.disableSkill(skillId, enabled) ?? false;
+    if (spaceId) {
+      const disabled = this.getExecutor(spaceId)?.disableSkill(skillId, enabled) ?? false;
+      if (disabled) this.emit('skill_updated', { skillId, patch: { enabled } });
+      return disabled;
+    }
     let changed = false;
     for (const [, ex] of this.executors) {
       if (ex.disableSkill(skillId, enabled)) changed = true;
     }
+    if (changed) this.emit('skill_updated', { skillId, patch: { enabled } });
     return changed;
   }
 
   removeSkill(skillId: string, spaceId?: string): boolean {
-    if (spaceId) return this.getExecutor(spaceId)?.removeSkill(skillId) ?? false;
+    if (spaceId) {
+      const removed = this.getExecutor(spaceId)?.removeSkill(skillId) ?? false;
+      if (removed) this.emit('skill_removed', { skillId });
+      return removed;
+    }
     let changed = false;
     for (const [, ex] of this.executors) {
       if (ex.removeSkill(skillId)) changed = true;
     }
+    if (changed) this.emit('skill_removed', { skillId });
     return changed;
   }
 
