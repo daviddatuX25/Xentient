@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xentient</title>
+  <link rel="preload" href="/fonts/universalSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+  <div id="app">
+    <header id="header">
+      <div class="header-left">
+        <h1 class="logo">Xentient</h1>
+      </div>
+      <div class="header-right">
+        <span id="mode-badge" class="mode-badge mode-sleep">SLEEP</span>
+        <span id="mqtt-indicator" class="conn-indicator" title="MQTT">MQTT</span>
+        <span id="camera-indicator" class="conn-indicator" title="Camera">CAM</span>
+        <span id="brain-indicator" class="conn-indicator" title="Brain">BRAIN</span>
+      </div>
+    </header>
+    <nav id="nav">
+      <button data-tab="overview" class="tab-btn active">Overview</button>
+      <button data-tab="skills" class="tab-btn">Skills</button>
+      <button data-tab="telemetry" class="tab-btn">Telemetry</button>
+      <button data-tab="mode" class="tab-btn">Mode</button>
+    </nav>
+    <main id="content">
+      <!-- Panel content rendered by JS modules -->
+    </main>
+  </div>
+  <div id="reconnect-banner" class="banner hidden">Reconnecting...</div>
+  <div id="toast-container"></div>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
