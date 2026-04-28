@@ -1331,3 +1331,377 @@ h1, h2, h3, h4, h5, h6 {
     padding: 4px 0;
   }
 }
+
+/* ── Telemetry Panel ─────────────────────────────────────────────── */
+
+/* Sparkline rows */
+.sparkline-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sparkline-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+}
+
+.sparkline-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.sparkline-canvas {
+  width: 100%;
+  height: 32px;
+  border-radius: 4px;
+  background: var(--bg-deep);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sparkline-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+/* Motion Timeline */
+.motion-timeline {
+  position: relative;
+}
+
+.timeline-bar {
+  position: relative;
+  height: 24px;
+  background: var(--bg-deep);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.timeline-bar .motion-dot {
+  position: absolute;
+  top: 9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(40, 90%, 50%);
+  transform: translateX(-3px);
+}
+
+.timeline-label {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.timeline-empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Mode Timeline */
+.mode-timeline {
+  position: relative;
+}
+
+.mode-timeline-bar {
+  position: relative;
+  height: 24px;
+  background: var(--bg-deep);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mode-block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+.mode-sleep { background: hsl(240, 60%, 55%); }
+.mode-listen { background: hsl(160, 60%, 45%); }
+.mode-active { background: hsl(40, 90%, 50%); }
+.mode-record { background: hsl(0, 70%, 55%); }
+
+.mode-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.mode-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.mode-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Skill Fire Log */
+.skill-log-container {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.skill-log-entry {
+  display: grid;
+  grid-template-columns: 72px 1fr 72px 36px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(12, 12, 11, 0.3);
+  font-size: 13px;
+}
+
+.skill-log-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.skill-log-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-log-trigger {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.skill-log-priority {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  text-align: right;
+}
+
+.skill-log-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Escalation Feed */
+.escalation-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.escalation-card {
+  background: var(--bg-deep);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.escalation-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.escalation-level {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.escalation-header .skill-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.escalation-header .timestamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.escalation-context {
+  margin-top: 8px;
+}
+
+.escalation-context summary {
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.escalation-context summary:hover {
+  color: var(--accent-hover);
+}
+
+.context-json {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.escalation-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Conflict Log */
+.conflict-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.conflict-card {
+  background: var(--bg-deep);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.conflict-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conflict-icon {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(0, 70%, 55%);
+  padding: 2px 8px;
+  background: rgba(220, 38, 38, 0.15);
+  border-radius: var(--radius-pill);
+}
+
+.conflict-header .timestamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.conflict-skills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.conflict-skill {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(37, 99, 235, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.conflict-vs {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.conflict-resolution {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.conflict-winner {
+  font-family: var(--font-mono);
+  color: hsl(160, 60%, 45%);
+}
+
+.conflict-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ── Responsive Telemetry Panel ──────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .sparkline-row {
+    grid-template-columns: 48px 1fr 48px;
+  }
+
+  .sparkline-canvas {
+    height: 24px;
+  }
+
+  .skill-log-entry {
+    grid-template-columns: 56px 1fr 36px;
+  }
+
+  .skill-log-trigger {
+    display: none;
+  }
+
+  .mode-legend {
+    gap: 8px;
+  }
+}

@@ -53,6 +53,14 @@ export class DashboardAPI {
     return this.request(`/api/sensors/history${query}`);
   }
 
+  async getMotionHistory(minutes = 30) {
+    return this.request(`/api/sensors/motion-history?minutes=${minutes}`);
+  }
+
+  async getModeHistory(minutes = 30) {
+    return this.request(`/api/mode/history?minutes=${minutes}`);
+  }
+
   // ── Skills ─────────────────────────────────────────────────────
 
   async getSkills() {

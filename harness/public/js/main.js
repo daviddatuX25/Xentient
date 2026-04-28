@@ -8,7 +8,7 @@ import { DashboardAPI } from './api.js';
 import { DashboardSSE } from './sse.js';
 import { renderOverview, renderOverviewSkeleton } from './overview.js';
 import { renderSkills, flashSkillRow, refreshSkillList, refreshSkillPack } from './skills.js';
-import { renderTelemetry } from './telemetry.js';
+import { renderTelemetry, handleSensorUpdate, handleSkillFired, handleSkillEscalated, handleSkillConflict, handleModeChange, reseedTelemetryData } from './telemetry.js';
 import { renderMode } from './mode.js';
 import { showToast, updateModeBadge, updateConnIndicator, updatePageTitle } from './components.js';
 
@@ -81,6 +81,8 @@ function onSSEEvent(event) {
         updatePageTitle(newMode);
         if (state.activeTab === 'overview' || state.activeTab === 'mode') renderActivePanel();
       }
+      // Update telemetry mode timeline
+      if (state.activeTab === 'telemetry') handleModeChange(event);
       break;
     }
     case 'sensor_update':
@@ -88,6 +90,8 @@ function onSSEEvent(event) {
       if (event.humidity !== undefined) state.sensors.humidity = event.humidity;
       if (event.pressure !== undefined) state.sensors.pressure = event.pressure;
       state.sensors.lastUpdate = Date.now();
+      // Update telemetry sparklines if on telemetry tab
+      if (state.activeTab === 'telemetry') handleSensorUpdate(event);
       if (state.activeTab === 'overview' || state.activeTab === 'mode') renderActivePanel();
       break;
     case 'skill_registered':
@@ -113,10 +117,16 @@ function onSSEEvent(event) {
     case 'skill_fired':
       // Flash the fired skill row on skills tab
       if (state.activeTab === 'skills') flashSkillRow(event.skillId || event.id);
+      // Add to telemetry skill fire log
+      if (state.activeTab === 'telemetry') handleSkillFired(event);
       // Fall through to re-render overview stats
     case 'skill_escalated':
-    case 'skill_conflict':
+      if (state.activeTab === 'telemetry') handleSkillEscalated(event);
       // Re-render overview to update skill fire stats
+      if (state.activeTab === 'overview') renderActivePanel();
+      break;
+    case 'skill_conflict':
+      if (state.activeTab === 'telemetry') handleSkillConflict(event);
       if (state.activeTab === 'overview') renderActivePanel();
       break;
     default:
@@ -137,6 +147,8 @@ function onSSEReconnect() {
   refreshState();
   // Refresh skills panel event mappings if on skills tab
   if (state.activeTab === 'skills') refreshSkillPack();
+  // Re-seed telemetry data (sparklines, timelines) on reconnect
+  if (state.activeTab === 'telemetry') reseedTelemetryData(api);
 }
 
 // ─── State Refresh ───────────────────────────────────────────────
