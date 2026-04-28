@@ -7,7 +7,7 @@
 import { DashboardAPI } from './api.js';
 import { DashboardSSE } from './sse.js';
 import { renderOverview, renderOverviewSkeleton } from './overview.js';
-import { renderSkills } from './skills.js';
+import { renderSkills, flashSkillRow, refreshSkillList, refreshSkillPack } from './skills.js';
 import { renderTelemetry } from './telemetry.js';
 import { renderMode } from './mode.js';
 import { showToast, updateModeBadge, updateConnIndicator, updatePageTitle } from './components.js';
@@ -96,17 +96,23 @@ function onSSEEvent(event) {
       api.getSkills().then(skills => {
         state.skills = skills;
         if (state.activeTab === 'overview') renderActivePanel();
+        if (state.activeTab === 'skills') refreshSkillList();
       });
       break;
     case 'pack_loaded':
       state.activePack = event.packName;
       if (state.activeTab === 'overview') renderActivePanel();
+      if (state.activeTab === 'skills') refreshSkillPack();
       break;
     case 'pack_unloaded':
       state.activePack = null;
       if (state.activeTab === 'overview') renderActivePanel();
+      if (state.activeTab === 'skills') refreshSkillPack();
       break;
     case 'skill_fired':
+      // Flash the fired skill row on skills tab
+      if (state.activeTab === 'skills') flashSkillRow(event.skillId || event.id);
+      // Fall through to re-render overview stats
     case 'skill_escalated':
     case 'skill_conflict':
       // Re-render overview to update skill fire stats
@@ -128,6 +134,8 @@ function onSSEReconnect() {
   hideReconnectBanner();
   // Re-fetch full state on reconnect
   refreshState();
+  // Refresh skills panel event mappings if on skills tab
+  if (state.activeTab === 'skills') refreshSkillPack();
 }
 
 // ─── State Refresh ───────────────────────────────────────────────

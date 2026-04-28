@@ -17,7 +17,10 @@ export class DashboardAPI {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+      const err = new Error(data.error || `HTTP ${res.status}`);
+      err.status = res.status;
+      err.data = data;
+      throw err;
     }
     return data;
   }

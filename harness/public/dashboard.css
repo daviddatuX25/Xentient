@@ -625,3 +625,521 @@ h1, h2, h3, h4, h5, h6 {
 .items-center { align-items: center; }
 .gap-2 { gap: 8px; }
 .gap-4 { gap: 16px; }
+
+/* ── Skill Table ────────────────────────────────────────────────── */
+
+.skill-table-wrapper {
+  overflow-x: auto;
+}
+
+.skill-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.skill-table th {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
+}
+
+.skill-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast);
+}
+
+.skill-table th.sortable:hover {
+  color: var(--text-primary);
+}
+
+.skill-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(12, 12, 11, 0.5);
+  vertical-align: middle;
+}
+
+.skill-table-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.skill-table-body thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  z-index: 1;
+}
+
+.skill-row {
+  transition: background var(--transition-fast);
+}
+
+.skill-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.skill-row.flash-accent {
+  background: rgba(37, 99, 235, 0.2);
+}
+
+.skill-table-empty {
+  text-align: center;
+  padding: 24px !important;
+  color: var(--text-secondary);
+}
+
+/* ── Source Badges ──────────────────────────────────────────────── */
+
+.source-badge {
+  display: inline-flex;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.badge-builtin {
+  background: rgba(125, 129, 135, 0.2);
+  color: var(--text-secondary);
+}
+
+.badge-pack {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--accent);
+}
+
+.badge-brain {
+  background: rgba(160, 120, 240, 0.15);
+  color: hsl(270, 70%, 70%);
+}
+
+/* ── Toggle Switch ──────────────────────────────────────────────── */
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(125, 129, 135, 0.3);
+  border-radius: 20px;
+  transition: background var(--transition-fast);
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: rgba(37, 99, 235, 0.5);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  background: var(--accent);
+  transform: translateX(16px);
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Detail Drawer ──────────────────────────────────────────────── */
+
+.drawer-container {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.6);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.drawer-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 400px;
+  max-width: 90vw;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--card-border);
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out;
+  overflow-y: auto;
+  z-index: 201;
+}
+
+.drawer-panel.open {
+  transform: translateX(0);
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.drawer-title {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.drawer-close:hover {
+  color: var(--text-primary);
+}
+
+.drawer-body {
+  padding: 24px;
+}
+
+.detail-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(12, 12, 11, 0.3);
+}
+
+.detail-label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.detail-value {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.detail-section {
+  padding: 12px 0;
+}
+
+.detail-json {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-deep);
+  border-radius: 12px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-actions {
+  padding-top: 20px;
+  display: flex;
+  gap: 8px;
+}
+
+.btn-danger-sm {
+  font-family: var(--font-ui);
+  font-weight: var(--weight);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid hsl(0, 70%, 55%);
+  background: transparent;
+  color: hsl(0, 70%, 55%);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-danger-sm:hover {
+  background: rgba(220, 38, 38, 0.15);
+}
+
+.btn-danger-sm.btn-danger {
+  background: hsl(0, 70%, 55%);
+  color: #fff;
+  border-color: hsl(0, 70%, 55%);
+}
+
+/* ── Skill Form ─────────────────────────────────────────────────── */
+
+.skill-form {
+  padding-top: 8px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.form-group {
+  flex: 1;
+  min-width: 160px;
+}
+
+.form-group-full {
+  flex-basis: 100%;
+}
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  font-family: var(--font-ui);
+  font-weight: var(--weight);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  width: 100%;
+  transition: border-color var(--transition-fast);
+  outline: none;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--accent);
+}
+
+.form-input.has-error,
+.form-select.has-error,
+.form-textarea.has-error {
+  border-color: hsl(0, 70%, 55%);
+}
+
+.form-field-error {
+  display: block;
+  color: hsl(0, 70%, 55%);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8187' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 160px;
+  line-height: 1.5;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.mode-toggle-btn {
+  font-family: var(--font-ui);
+  font-weight: var(--weight);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--card-border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-toggle-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.mode-toggle-btn.active {
+  color: var(--text-primary);
+  background: rgba(37, 99, 235, 0.15);
+  border-color: var(--accent);
+}
+
+/* ── Pack Section ─────────────────────────────────────────────────── */
+
+.pack-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pack-active {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pack-label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.pack-name {
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.pack-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pack-controls .form-select {
+  width: auto;
+  min-width: 160px;
+}
+
+/* ── Event Mappings Table ─────────────────────────────────────────── */
+
+.mapping-table-wrapper {
+  overflow-x: auto;
+}
+
+.mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.mapping-table th {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.mapping-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(12, 12, 11, 0.3);
+}
+
+.mapping-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mapping-add .form-input {
+  width: auto;
+}
+
+/* ── Responsive Skill Panel ──────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .skill-table {
+    font-size: 12px;
+  }
+
+  .skill-table th,
+  .skill-table td {
+    padding: 6px 8px;
+  }
+
+  .drawer-panel {
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .form-group {
+    min-width: 100%;
+  }
+
+  .pack-controls .form-select {
+    min-width: 120px;
+  }
+
+  .mapping-add {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mapping-add .form-input {
+    width: 100%;
+  }
+}
