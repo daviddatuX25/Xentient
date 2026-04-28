@@ -1143,3 +1143,191 @@ h1, h2, h3, h4, h5, h6 {
     width: 100%;
   }
 }
+
+/* ── Mode Panel ───────────────────────────────────────────────────── */
+
+.mode-panel {
+  align-items: start;
+}
+
+.mode-diagram-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.mode-diagram {
+  width: 100%;
+  max-width: 300px;
+  display: block;
+  margin: 0 auto;
+}
+
+.mode-node {
+  transition: filter var(--transition-fast), opacity var(--transition-fast);
+}
+
+.mode-node.reachable:hover {
+  filter: brightness(1.3);
+  cursor: pointer;
+}
+
+.mode-node:not(.reachable):not(.current) {
+  cursor: not-allowed;
+}
+
+.mode-node.transitioning {
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+.mode-node.invalid-flash {
+  animation: flash-red 0.5s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.5); }
+}
+
+@keyframes flash-red {
+  0% { filter: brightness(2) hue-rotate(-60deg); }
+  100% { filter: none; }
+}
+
+/* ── Skill Profile Card (H6: distinct from Hardware Mode) ────────── */
+
+.skill-profile-card {
+  padding: 0;
+}
+
+.section-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.mode-select {
+  font-family: var(--font-ui);
+  font-weight: var(--weight);
+  font-size: 13px;
+  padding: 8px 32px 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8187' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  outline: none;
+}
+
+.mode-select:focus {
+  border-color: var(--accent);
+}
+
+.mode-select:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  letter-spacing: 0.02em;
+}
+
+/* ── Space Info Card ──────────────────────────────────────────────── */
+
+.space-info-card {
+  padding: 0;
+}
+
+.info-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  align-items: baseline;
+}
+
+.info-list dt {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.info-list dd {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* ── Hardware Status Card ─────────────────────────────────────────── */
+
+.hardware-status-card {
+  padding: 0;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.status-row.peripheral {
+  padding-left: 8px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+.status-indicator.online {
+  background: hsl(160, 60%, 45%);
+  box-shadow: 0 0 6px hsl(160, 60%, 45%);
+}
+
+.status-indicator.offline {
+  background: var(--text-secondary);
+  opacity: 0.4;
+}
+
+/* ── Space Card (right column) ───────────────────────────────────── */
+
+.space-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Responsive Mode Panel ────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .mode-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-diagram {
+    max-width: 250px;
+  }
+
+  .info-list {
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+  }
+
+  .status-row {
+    gap: 8px;
+    padding: 4px 0;
+  }
+}

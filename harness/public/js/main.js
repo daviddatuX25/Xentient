@@ -79,7 +79,7 @@ function onSSEEvent(event) {
         state.mode = newMode;
         updateModeBadge(newMode);
         updatePageTitle(newMode);
-        if (state.activeTab === 'overview') renderActivePanel();
+        if (state.activeTab === 'overview' || state.activeTab === 'mode') renderActivePanel();
       }
       break;
     }
@@ -87,7 +87,8 @@ function onSSEEvent(event) {
       if (event.temperature !== undefined) state.sensors.temperature = event.temperature;
       if (event.humidity !== undefined) state.sensors.humidity = event.humidity;
       if (event.pressure !== undefined) state.sensors.pressure = event.pressure;
-      if (state.activeTab === 'overview') renderActivePanel();
+      state.sensors.lastUpdate = Date.now();
+      if (state.activeTab === 'overview' || state.activeTab === 'mode') renderActivePanel();
       break;
     case 'skill_registered':
     case 'skill_removed':

@@ -101,6 +101,8 @@ async function main() {
     cameraServer,
     sensorCache,
     sensorHistory: { query: () => [] },  // Stub — basic mode has no sensor history
+    motionHistory: { query: () => [] },  // Stub — basic mode has no motion history
+    modeHistory: { query: () => [] },    // Stub — basic mode has no mode history
     spaceManager: { listSkills: () => [], skillLog: { append: () => {}, query: () => [], attachEscalationResponse: () => {} } } as any,
     eventBridge: { start: () => {}, stop: () => {}, listMappings: () => [], addCustomMapping: () => "", removeMapping: () => false, handleMqttEvent: () => {}, forwardModeEvent: () => {}, register: () => {} } as any,
     packLoader: { loadPack: () => {}, unloadCurrentPack: () => {}, getLoadedPack: () => null, listAvailablePacks: () => [], reload: () => {} } as any,

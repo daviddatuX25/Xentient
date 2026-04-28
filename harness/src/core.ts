@@ -14,6 +14,8 @@ import { SpaceManager } from "./engine/SpaceManager";
 import { SkillPersistence } from "./engine/SkillPersistence";
 import { PackLoader } from "./engine/PackLoader";
 import { SensorHistory } from "./engine/SensorHistory";
+import { MotionHistory } from "./engine/MotionHistory";
+import { ModeHistory } from "./engine/ModeHistory";
 import { startMcpServer } from "./mcp/server";
 import type { SensorCache, Space } from "./shared/types";
 import { MCP_EVENTS, PROTOCOL_VERSION, PERIPHERAL_IDS } from "./shared/contracts";
@@ -196,11 +198,24 @@ async function main() {
 
   // --- SensorHistory: ring buffer for sensor readings (5min window) ---
   const sensorHistory = new SensorHistory();
+  // --- MotionHistory: ring buffer for PIR motion events (30min window) ---
+  const motionHistory = new MotionHistory();
+  // --- ModeHistory: ring buffer for mode transition intervals ---
+  const modeHistory = new ModeHistory();
+  // Seed current mode into ModeHistory on startup
+  modeHistory.recordTransition(modeManager.getMode());
   // Push sensor cache snapshots into history on each BME280 reading
   mqtt.on("sensor", (data: unknown) => {
     const d = data as { peripheralType?: number };
     if (d.peripheralType === PERIPHERAL_IDS.BME280) {
       sensorHistory.push(sensorCache);
+    }
+  });
+  // Push motion events into MotionHistory on each PIR reading
+  mqtt.on("sensor", (data: unknown) => {
+    const d = data as { peripheralType?: number; payload?: { motion?: boolean } };
+    if (d.peripheralType === PERIPHERAL_IDS.PIR) {
+      motionHistory.push(Boolean(d.payload?.motion));
     }
   });
 
@@ -213,6 +228,8 @@ async function main() {
       cameraServer,
       sensorCache,
       sensorHistory,
+      motionHistory,
+      modeHistory,
       spaceManager,
       eventBridge,
       packLoader,
@@ -286,6 +303,7 @@ async function main() {
 
   // Mode change event with timestamp (new in 08-02, Expansion 5.5)
   modeManager.on('mode_change', (data: { from: string; to: string; timestamp: number }) => {
+    modeHistory.recordTransition(data.to);
     controlServer.broadcastSSE({ type: 'mode_change', ...data });
   });
 

@@ -36,6 +36,16 @@ export interface SensorHistoryLike {
   query(since?: number): { temperature: number | null; humidity: number | null; pressure: number | null; timestamp: number }[];
 }
 
+/** Structural type for MotionHistory dependency. */
+export interface MotionHistoryLike {
+  query(sinceMs?: number): { timestamp: number; active: boolean }[];
+}
+
+/** Structural type for ModeHistory dependency. */
+export interface ModeHistoryLike {
+  query(sinceMs?: number): { mode: string; startTime: number; endTime: number | null }[];
+}
+
 /** All ControlServer dependencies injected through a single object (same pattern as McpToolDeps). */
 export interface ControlServerDeps {
   mqtt: MqttClient;
@@ -43,6 +53,8 @@ export interface ControlServerDeps {
   cameraServer: CameraServer;
   sensorCache: SensorCache;
   sensorHistory: SensorHistoryLike;
+  motionHistory: MotionHistoryLike;
+  modeHistory: ModeHistoryLike;
   spaceManager: SpaceManager;
   eventBridge: EventBridge;
   packLoader: PackLoader;
@@ -126,6 +138,10 @@ export class ControlServer extends EventEmitter {
       .add("DELETE", "/api/event-mappings/:id", this.handleRemoveEventMapping.bind(this))
       // Sensor History (backed by SensorHistory — added in 08-05)
       .add("GET", "/api/sensors/history", this.handleGetSensorHistory.bind(this))
+      // Motion History (backed by MotionHistory — added in 08-05)
+      .add("GET", "/api/sensors/motion-history", this.handleGetMotionHistory.bind(this))
+      // Mode History (backed by ModeHistory — added in 08-05)
+      .add("GET", "/api/mode/history", this.handleGetModeHistory.bind(this))
       // Config (frontend constants — Expansion 6.4)
       .add("GET", "/api/config", this.handleGetConfig.bind(this));
   }
@@ -567,6 +583,26 @@ export class ControlServer extends EventEmitter {
     const since = url.searchParams.get('since') ? Number(url.searchParams.get('since')) : undefined;
     const readings = this.deps.sensorHistory.query(since);
     this.sendJSON(res, 200, readings);
+  }
+
+  // ── Motion History Endpoint ──────────────────────────────────────────
+
+  private async handleGetMotionHistory(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const url = new URL(req.url!, `http://localhost`);
+    const minutes = Number(url.searchParams.get('minutes') ?? '30');
+    const sinceMs = minutes * 60 * 1000;
+    const history = this.deps.motionHistory.query(sinceMs);
+    this.sendJSON(res, 200, history);
+  }
+
+  // ── Mode History Endpoint ─────────────────────────────────────────────
+
+  private async handleGetModeHistory(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const url = new URL(req.url!, `http://localhost`);
+    const minutes = Number(url.searchParams.get('minutes') ?? '30');
+    const sinceMs = minutes * 60 * 1000;
+    const history = this.deps.modeHistory.query(sinceMs);
+    this.sendJSON(res, 200, history);
   }
 
   // ── Config Endpoint ──────────────────────────────────────────────────
