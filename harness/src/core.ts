@@ -7,9 +7,10 @@ import { AudioServer } from "./comms/AudioServer";
 import { CameraServer } from "./comms/CameraServer";
 import { ControlServer } from "./comms/ControlServer";
 import { ModeManager } from "./engine/ModeManager";
+import { SpaceManager } from "./engine/SpaceManager";
 import { startMcpServer } from "./mcp/server";
-import type { SensorCache } from "./shared/types";
-import { MCP_EVENTS, PROTOCOL_VERSION } from "./shared/contracts";
+import type { SensorCache, Space } from "./shared/types";
+import { MCP_EVENTS, PERIPHERAL_IDS, PROTOCOL_VERSION } from "./shared/contracts";
 import pino from "pino";
 
 const logger = pino({ name: "xentient-core" }, process.stderr);
@@ -47,13 +48,43 @@ async function main() {
   cameraServer.on("cameraOffline", () => logger.warn("Camera stream offline - no frames for 10s"));
 
   // Start MCP server (stdio transport - brain processes connect here)
-  const mcpServer = await startMcpServer({
+  // Mutable ref pattern: create deps object first, pass to startMcpServer,
+  // then assign spaceManager after both mcpServer and spaceManager exist.
+  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager } = {
     mqtt,
     audio: audioServer,
     camera: cameraServer,
     modeManager,
     sensorCache,
-  });
+  };
+  const mcpServer = await startMcpServer(mcpDeps as any);
+
+  // --- SpaceManager (Xentient Layers) ---
+  // Circular dep: SpaceManager needs mcpServer, startMcpServer needs spaceManager.
+  // Solved by making spaceManager optional in McpToolDeps and assigning after both exist.
+  const spaceManager = new SpaceManager(
+    mcpServer,
+    modeManager,
+    mqtt,
+    () => ({ ...sensorCache }),  // sensorSnapshot factory (plain object, no methods)
+    () => cameraServer.getLatestJpeg?.()?.toString('base64'),
+  );
+
+  // Wire spaceManager into MCP deps (createToolHandlers captures deps by reference)
+  mcpDeps.spaceManager = spaceManager;
+
+  // Default Space (single-node v1)
+  const defaultSpace: Space = {
+    id: 'default',
+    nodeBaseId: config.nodeId ?? 'node-01',
+    activePack: 'default',
+    spaceMode: modeManager.getMode(),
+    activeMode: 'default',
+    integrations: [],
+    sensors: ['temperature', 'humidity', 'motion'],
+  };
+  spaceManager.addSpace(defaultSpace);
+  logger.info({ spaceId: defaultSpace.id }, 'Default space initialized');
 
   // -- AudioAccumulator (GAP-2/T-19): buffer PCM chunks during active/listen --
   const MAX_AUDIO_BYTES = 16_000 * 2 * 30; // 30s cap: 16kHz * 2 bytes * 30s = 960KB
@@ -70,6 +101,7 @@ async function main() {
       if (totalBytes > MAX_AUDIO_BYTES) {
         logger.warn({ totalBytes, maxBytes: MAX_AUDIO_BYTES }, "AudioAccumulator cap reached - flushing early");
         const combined = Buffer.concat(audioChunks);
+        // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
         mcpServer.notification({
           method: MCP_EVENTS.voice_end,
           params: {
@@ -89,6 +121,7 @@ async function main() {
     const d = data as { source?: string; stage?: string };
     if (d.source === "voice" && d.stage === "end" && isAccumulating) {
       const combined = Buffer.concat(audioChunks);
+      // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
       mcpServer.notification({
         method: MCP_EVENTS.voice_end,
         params: {
@@ -102,9 +135,49 @@ async function main() {
     }
   });
 
+  // --- Forward MQTT events to SkillExecutor via SpaceManager ---
+  // PIR motion -> skill event
+  mqtt.on("sensor", (data: unknown) => {
+    const d = data as { peripheralType?: number; payload?: { motion?: boolean } };
+    if (d.peripheralType === PERIPHERAL_IDS.PIR && d.payload?.motion) {
+      spaceManager.handleEvent('motion_detected', { nodeId: mqtt.nodeId, timestamp: Date.now() });
+    }
+    // BME280 sensor update -> skill event
+    if (d.peripheralType === PERIPHERAL_IDS.BME280) {
+      spaceManager.handleEvent('sensor_update', { payload: d.payload, timestamp: Date.now() });
+    }
+  });
+
+  // Voice triggers -> skill event
+  mqtt.on("triggerPipeline", (data: unknown) => {
+    const d = data as { source?: string; stage?: string };
+    if (d.source === "voice") {
+      const eventName = d.stage === "start" ? "voice_start" : "voice_end";
+      spaceManager.handleEvent(eventName, { timestamp: Date.now() });
+    }
+  });
+
+  // Keep SpaceMode in sync when ModeManager transitions hardware state
+  modeManager.on("modeChange", ({ to }) => {
+    spaceManager.switchMode('default', to);
+    logger.info({ mode: to }, 'SpaceMode synced with ModeManager');
+  });
+
   // Control server - HTTP API + static files + SSE for browser test page
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
   const controlServer = new ControlServer(controlPort, mqtt, modeManager, cameraServer, sensorCache);
+
+  // Relay SkillExecutor observability events to dashboard via SSE
+  spaceManager.on('skill_fired', (event: any) => {
+    controlServer.broadcastSkillEvent({ type: 'skill_fired', ...event });
+  });
+  spaceManager.on('skill_escalated', (event: any) => {
+    controlServer.broadcastSkillEvent({ type: 'skill_escalated', ...event });
+  });
+  spaceManager.on('skill_conflict', (event: any) => {
+    controlServer.broadcastSkillEvent({ type: 'skill_conflict', ...event });
+  });
+
   await controlServer.start();
 
   logger.info(
@@ -114,6 +187,8 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down gracefully...");
+    spaceManager.stopAll();
+    logger.info("SpaceManager stopped — all SkillExecutors shut down");
     modeManager.clearIdleTimer();
     mqtt.disconnect();
     cameraServer.close();

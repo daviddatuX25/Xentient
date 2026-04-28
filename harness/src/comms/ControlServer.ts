@@ -249,6 +249,11 @@ export class ControlServer extends EventEmitter {
     }
   }
 
+  /** Push skill observability events to SSE dashboard clients */
+  broadcastSkillEvent(data: object): void {
+    this.broadcastSSE(data);
+  }
+
   private readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       let body = "";
