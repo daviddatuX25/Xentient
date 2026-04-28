@@ -79,7 +79,7 @@ export interface CoreSkill {
 export type SkillTrigger =
   | { type: 'cron'; schedule: string }
   | { type: 'interval'; everyMs: number }
-  | { type: 'mode'; from: SpaceMode; to: SpaceMode }
+  | { type: 'mode'; from: SpaceMode | '*'; to: SpaceMode | '*' }
   | { type: 'sensor'; sensor: SensorKey; operator: CompareOperator; value: number }
   | { type: 'event'; event: string }
   | { type: 'internal'; event: string }

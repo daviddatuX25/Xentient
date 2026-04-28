@@ -144,6 +144,15 @@ export class SpaceManager extends EventEmitter {
     return true;
   }
 
+  updateSpaceMode(spaceId: string, mode: string): void {
+    const space = this.spaces.get(spaceId);
+    if (!space) return;
+    const prev = space.spaceMode;
+    if (prev === mode) return;
+    space.spaceMode = mode as import('../shared/contracts').Mode;
+    this.emit('spaceModeChanged', { spaceId, from: prev, to: mode });
+  }
+
   resolveConflict(resolution: { execute: string[]; skip: string[]; reason: string; conflictGroup: string }): void {
     // Route to all executors (conflict group is unique)
     for (const [, ex] of this.executors) {

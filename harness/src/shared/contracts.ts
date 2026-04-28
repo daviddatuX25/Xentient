@@ -296,7 +296,6 @@ export const SKILL_TOOLS = {
 // Builtin skill IDs (cannot be removed)
 export const BUILTIN_SKILL_IDS = [
   '_pir-wake',
-  '_idle-sleep',
   '_sensor-telemetry',
   '_determine-skill',
 ] as const;

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import pino from 'pino';
 import cron from 'node-cron';
+import type { ScheduledTask } from 'node-cron';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CoreSkill, CoreAction, SkillLogEntry,
@@ -32,9 +33,10 @@ export class SkillExecutor extends EventEmitter {
   private skills: Map<string, CoreSkill> = new Map();
   private counters: Map<string, number> = new Map();
   private modeHistory: string[] = [];
-  private cronHandles: Map<string, cron.ScheduledTask> = new Map();
+  private cronHandles: Map<string, ScheduledTask> = new Map();
   private intervalHandles: Map<string, NodeJS.Timeout> = new Map();
   private pendingConflicts: Map<string, PendingConflict> = new Map();
+  private counterResetTimers: Map<string, NodeJS.Timeout> = new Map();
   private tickHandle: NodeJS.Timeout | null = null;
   private opts: SkillExecutorOptions;
   private activeMode: string = 'default';
@@ -57,8 +59,10 @@ export class SkillExecutor extends EventEmitter {
     if (this.tickHandle) clearInterval(this.tickHandle);
     for (const [, task] of this.cronHandles) task.stop();
     for (const [, handle] of this.intervalHandles) clearInterval(handle);
+    for (const [, handle] of this.counterResetTimers) clearTimeout(handle);
     this.cronHandles.clear();
     this.intervalHandles.clear();
+    this.counterResetTimers.clear();
     logger.info({ spaceId: this.opts.spaceId }, 'SkillExecutor stopped');
   }
 
@@ -101,6 +105,12 @@ export class SkillExecutor extends EventEmitter {
       return false;
     }
     this.teardownSkillSchedule(id);
+    for (const [key, handle] of this.counterResetTimers) {
+      if (key.startsWith(`${id}:`)) {
+        clearTimeout(handle);
+        this.counterResetTimers.delete(key);
+      }
+    }
     return this.skills.delete(id);
   }
 
@@ -111,14 +121,27 @@ export class SkillExecutor extends EventEmitter {
   }
 
   handleEvent(eventName: string, triggerData: Record<string, unknown> = {}): void {
-    const matching = Array.from(this.skills.values()).filter(s =>
+    const eventMatching = Array.from(this.skills.values()).filter(s =>
       s.enabled &&
       this.matchesSpace(s) &&
       s.trigger.type === 'event' &&
       (s.trigger as { type: 'event'; event: string }).event === eventName
     );
-    if (matching.length > 0) {
-      this.executeSkillSet(matching, { type: 'event', event: eventName }, triggerData);
+    if (eventMatching.length > 0) {
+      this.executeSkillSet(eventMatching, { type: 'event', event: eventName }, triggerData);
+    }
+
+    if (eventName === 'mode_transition') {
+      const modeMatching = Array.from(this.skills.values()).filter(s => {
+        if (!s.enabled || !this.matchesSpace(s) || s.trigger.type !== 'mode') return false;
+        const t = s.trigger as { type: 'mode'; from: string; to: string };
+        const fromMatch = t.from === '*' || t.from === triggerData.from;
+        const toMatch = t.to === '*' || t.to === triggerData.to;
+        return fromMatch && toMatch;
+      });
+      if (modeMatching.length > 0) {
+        this.executeSkillSet(modeMatching, { type: 'mode' }, triggerData);
+      }
     }
   }
 
@@ -143,7 +166,7 @@ export class SkillExecutor extends EventEmitter {
     for (const skill of this.skills.values()) {
       if (!skill.enabled || !this.matchesSpace(skill)) continue;
       if (skill.trigger.type !== 'sensor') continue;
-      if (this.evaluateTrigger(skill.trigger, ctx)) candidates.push(skill);
+      if (this.evaluateTrigger(skill.trigger, { ...ctx, _skillId: skill.id })) candidates.push(skill);
     }
 
     if (candidates.length > 0) {
@@ -219,6 +242,25 @@ export class SkillExecutor extends EventEmitter {
 
     skill.lastFiredAt = now;
     skill.fireCount++;
+
+    if (skill.collect) {
+      for (const dc of skill.collect) {
+        if (dc.type === 'counter') {
+          const cur = this.counters.get(dc.name) ?? 0;
+          this.counters.set(dc.name, cur + 1);
+          if (dc.resetAfterMs) {
+            const timerKey = `${skill.id}:${dc.name}`;
+            const existing = this.counterResetTimers.get(timerKey);
+            if (existing) clearTimeout(existing);
+            const handle = setTimeout(() => {
+              this.counters.set(dc.name, 0);
+              this.counterResetTimers.delete(timerKey);
+            }, dc.resetAfterMs);
+            this.counterResetTimers.set(timerKey, handle);
+          }
+        }
+      }
+    }
 
     const actionsExecuted = this.executeL1Actions(skill, triggerData);
     const shouldEscalate = this.checkEscalation(skill, triggerData);
@@ -324,6 +366,7 @@ export class SkillExecutor extends EventEmitter {
     };
     this.opts.onObservabilityEvent(event);
 
+    // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
     this.opts.mcpServer.notification({
       method: SKILL_EVENTS.SKILL_ESCALATED,
       params: {
@@ -366,6 +409,7 @@ export class SkillExecutor extends EventEmitter {
       timeoutHandle,
     });
 
+    // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
     this.opts.mcpServer.notification({
       method: SKILL_EVENTS.SKILL_CONFLICT,
       params: {
@@ -378,13 +422,25 @@ export class SkillExecutor extends EventEmitter {
   }
 
   private matchesSpace(skill: CoreSkill): boolean {
-    return skill.spaceId === '*' || skill.spaceId === this.opts.spaceId;
+    const spaceMatch = skill.spaceId === '*' || skill.spaceId === this.opts.spaceId;
+    const modeMatch = !skill.modeFilter || skill.modeFilter === this.activeMode;
+    return spaceMatch && modeMatch;
   }
 
   private evaluateTrigger(trigger: Record<string, unknown>, ctx: Record<string, unknown>): boolean {
     if (trigger.type === 'sensor') {
       const val = (ctx.sensors as Record<string, unknown>)?.[trigger.sensor as string] as number ?? 0;
       return this.compare(val, trigger.operator as string, trigger.value as number);
+    }
+    if (trigger.type === 'composite') {
+      const depth = (ctx._compositeDepth as number | undefined) ?? 0;
+      if (depth > 5) {
+        logger.warn({ skillId: ctx._skillId, depth }, 'Composite trigger depth limit exceeded');
+        return false;
+      }
+      const subTriggers = trigger.all as Record<string, unknown>[];
+      if (!subTriggers || subTriggers.length === 0) return false;
+      return subTriggers.every(sub => this.evaluateTrigger(sub, { ...ctx, _compositeDepth: depth + 1 }));
     }
     return false;
   }

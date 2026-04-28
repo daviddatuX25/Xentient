@@ -158,9 +158,10 @@ async function main() {
   });
 
   // Keep SpaceMode in sync when ModeManager transitions hardware state
-  modeManager.on("modeChange", ({ to }) => {
-    spaceManager.switchMode('default', to);
-    logger.info({ mode: to }, 'SpaceMode synced with ModeManager');
+  modeManager.on("modeChange", ({ from, to }) => {
+    spaceManager.handleEvent('mode_transition', { from, to, timestamp: Date.now() });
+    spaceManager.updateSpaceMode('default', to);
+    logger.info({ from, to }, 'Mode transition — SpaceMode synced + skill event forwarded');
   });
 
   // Control server - HTTP API + static files + SSE for browser test page

@@ -15,21 +15,6 @@ export const PIR_WAKE: CoreSkill = {
   escalationCount: 0,
 };
 
-/** Idle timer → return to sleep */
-export const IDLE_SLEEP: CoreSkill = {
-  id: '_idle-sleep',
-  displayName: 'Idle Sleep',
-  enabled: true,
-  spaceId: '*',
-  trigger: { type: 'interval', everyMs: 60_000 },
-  priority: 50,
-  actions: [{ type: 'set_mode', mode: 'sleep' }],
-  source: 'builtin',
-  cooldownMs: 0,
-  fireCount: 0,
-  escalationCount: 0,
-};
-
 /** Sensor telemetry — log readings every 30s */
 export const SENSOR_TELEMETRY: CoreSkill = {
   id: '_sensor-telemetry',
@@ -67,4 +52,4 @@ export const DETERMINE_SKILL: CoreSkill = {
   escalationCount: 0,
 };
 
-export const ALL_BUILTINS: CoreSkill[] = [PIR_WAKE, IDLE_SLEEP, SENSOR_TELEMETRY, DETERMINE_SKILL];
+export const ALL_BUILTINS: CoreSkill[] = [PIR_WAKE, SENSOR_TELEMETRY, DETERMINE_SKILL];
