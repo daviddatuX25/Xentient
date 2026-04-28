@@ -222,7 +222,9 @@ async function main() {
     controlPort,
   );
 
-  // Relay SkillExecutor observability events to dashboard via SSE
+  // ── SSE Event Wiring ────────────────────────────────────────────────
+
+  // Skill observability events (existing)
   spaceManager.on('skill_fired', (event: any) => {
     controlServer.broadcastSSE({ type: 'skill_fired', ...event });
   });
@@ -232,6 +234,82 @@ async function main() {
   spaceManager.on('skill_conflict', (event: any) => {
     controlServer.broadcastSSE({ type: 'skill_conflict', ...event });
   });
+
+  // Skill lifecycle events (new in 08-02)
+  spaceManager.on('skill_registered', (data: { skillId: string; source: string; triggerType: string }) => {
+    controlServer.broadcastSSE({ type: 'skill_registered', ...data });
+    // Counter interval optimization (Expansion 2.2):
+    // Start counter polling when first skill with collectors is registered
+    const skill = spaceManager.listSkills().find(s => s.id === data.skillId);
+    if (skill?.collect?.length && !counterInterval) {
+      startCounterPolling();
+    }
+  });
+  spaceManager.on('skill_removed', (data: { skillId: string }) => {
+    controlServer.broadcastSSE({ type: 'skill_removed', ...data });
+    // Stop counter polling if no skills have collectors
+    const hasCollectors = spaceManager.listSkills().some(s => s.collect?.length);
+    if (!hasCollectors && counterInterval) {
+      clearInterval(counterInterval);
+      counterInterval = null;
+    }
+  });
+  spaceManager.on('skill_updated', (data: { skillId: string; patch: Record<string, unknown> }) => {
+    controlServer.broadcastSSE({ type: 'skill_updated', ...data });
+    // Counter interval lifecycle: check if collect was added/removed
+    if ('collect' in data.patch) {
+      const hasCollectors = spaceManager.listSkills().some(s => s.collect?.length);
+      if (hasCollectors && !counterInterval) {
+        startCounterPolling();
+      } else if (!hasCollectors && counterInterval) {
+        clearInterval(counterInterval);
+        counterInterval = null;
+      }
+    }
+  });
+
+  // Pack lifecycle events (new in 08-02)
+  packLoader.on('pack_loaded', (data: { packName: string; skillCount: number }) => {
+    controlServer.broadcastSSE({ type: 'pack_loaded', ...data });
+  });
+  packLoader.on('pack_unloaded', (data: { packName: string }) => {
+    controlServer.broadcastSSE({ type: 'pack_unloaded', ...data });
+  });
+
+  // Event mapping lifecycle events (new in 08-02)
+  eventBridge.on('mappingAdded', (data: { id: string; source: string; eventName: string }) => {
+    controlServer.broadcastSSE({ type: 'event_mapping_added', mappingId: data.id, source: data.source, eventName: data.eventName });
+  });
+  eventBridge.on('mappingRemoved', (mappingId: string) => {
+    controlServer.broadcastSSE({ type: 'event_mapping_removed', mappingId });
+  });
+
+  // Mode change event with timestamp (new in 08-02, Expansion 5.5)
+  modeManager.on('mode_change', (data: { from: string; to: string; timestamp: number }) => {
+    controlServer.broadcastSSE({ type: 'mode_change', ...data });
+  });
+
+  // Throttled sensor updates via SSE (replaces direct broadcast)
+  mqtt.on("sensor", (data: unknown) => {
+    const d = data as { peripheralType?: number };
+    if (d.peripheralType === PERIPHERAL_IDS.BME280) {
+      controlServer.broadcastThrottledSensor({
+        temperature: sensorCache.temperature,
+        humidity: sensorCache.humidity,
+        pressure: sensorCache.pressure,
+      });
+    }
+  });
+
+  // ── Counter interval lifecycle (Expansion 2.2) ─────────────────────
+  let counterInterval: NodeJS.Timeout | null = null;
+
+  function startCounterPolling(): void {
+    counterInterval = setInterval(() => {
+      const counters = spaceManager.getCounters();
+      controlServer.broadcastSSE({ type: 'counter_update', counters });
+    }, 1000);
+  }
 
   await controlServer.start();
 
