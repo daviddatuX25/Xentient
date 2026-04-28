@@ -7,6 +7,7 @@ import { SkillExecutor } from './SkillExecutor';
 import { SkillLog } from './SkillLog';
 import { ModeManager } from './ModeManager';
 import { MqttClient } from '../comms/MqttClient';
+import type { SkillPersistence } from './SkillPersistence';
 
 const logger = pino({ name: 'space-manager' }, process.stderr);
 
@@ -14,6 +15,7 @@ export class SpaceManager extends EventEmitter {
   private spaces: Map<string, Space> = new Map();
   private executors: Map<string, SkillExecutor> = new Map();
   readonly skillLog: SkillLog;
+  private persistence?: SkillPersistence;
 
   constructor(
     private mcpServer: McpServer,
@@ -24,6 +26,11 @@ export class SpaceManager extends EventEmitter {
   ) {
     super();
     this.skillLog = new SkillLog();
+  }
+
+  /** Inject persistence instance (called from core after construction) */
+  setPersistence(persistence: SkillPersistence): void {
+    this.persistence = persistence;
   }
 
   /** Create or replace a Space and start its executor */
@@ -44,6 +51,7 @@ export class SpaceManager extends EventEmitter {
       getSensorSnapshot: this.getSensorSnapshot,
       getCameraFrame: this.getCameraFrame,
       onObservabilityEvent: (event) => this.broadcastObservabilityEvent(event),
+      persistence: this.persistence,
     });
 
     // Wire LCD/chime emission from executor to MCP notifications

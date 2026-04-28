@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
 dotenv.config();
 
+import path from "path";
 import config from "../config/default.json";
 import { MqttClient } from "./comms/MqttClient";
 import { AudioServer } from "./comms/AudioServer";
@@ -9,6 +10,7 @@ import { ControlServer } from "./comms/ControlServer";
 import { EventBridge } from "./comms/EventBridge";
 import { ModeManager } from "./engine/ModeManager";
 import { SpaceManager } from "./engine/SpaceManager";
+import { SkillPersistence } from "./engine/SkillPersistence";
 import { startMcpServer } from "./mcp/server";
 import type { SensorCache, Space } from "./shared/types";
 import { MCP_EVENTS, PROTOCOL_VERSION } from "./shared/contracts";
@@ -86,6 +88,14 @@ async function main() {
   };
   spaceManager.addSpace(defaultSpace);
   logger.info({ spaceId: defaultSpace.id }, 'Default space initialized');
+
+  // --- Skill persistence: load brain-registered skills from disk ---
+  const persistence = new SkillPersistence(path.join(process.cwd(), 'var'));
+  spaceManager.setPersistence(persistence);
+  const persistedSkills = persistence.load();
+  for (const skill of persistedSkills) {
+    spaceManager.registerSkill(skill);
+  }
 
   // -- AudioAccumulator (GAP-2/T-19): buffer PCM chunks during active/listen --
   const MAX_AUDIO_BYTES = 16_000 * 2 * 30; // 30s cap: 16kHz * 2 bytes * 30s = 960KB

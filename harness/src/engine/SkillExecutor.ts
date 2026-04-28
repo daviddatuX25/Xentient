@@ -14,6 +14,7 @@ import { MqttClient } from '../comms/MqttClient';
 import { SkillLog } from './SkillLog';
 import { buildContext, SensorSnapshot } from './contextBuilders';
 import { ALL_BUILTINS } from './builtins';
+import type { SkillPersistence } from './SkillPersistence';
 
 const logger = pino({ name: 'skill-executor' }, process.stderr);
 
@@ -27,6 +28,7 @@ export interface SkillExecutorOptions {
   getSensorSnapshot: () => SensorSnapshot;
   getCameraFrame?: () => string | undefined;
   onObservabilityEvent: (event: ObservabilityEvent) => void;
+  persistence?: SkillPersistence;
 }
 
 export class SkillExecutor extends EventEmitter {
@@ -80,6 +82,7 @@ export class SkillExecutor extends EventEmitter {
     this.skills.set(skill.id, { ...skill, fireCount: 0, escalationCount: 0 });
     this.setupSkillSchedule(skill);
     logger.info({ skillId: skill.id }, 'Skill registered');
+    this.persist();
   }
 
   updateSkill(id: string, patch: Partial<CoreSkill>): boolean {
@@ -89,6 +92,7 @@ export class SkillExecutor extends EventEmitter {
     this.skills.set(id, updated);
     this.teardownSkillSchedule(id);
     this.setupSkillSchedule(updated);
+    this.persist();
     return true;
   }
 
@@ -111,7 +115,9 @@ export class SkillExecutor extends EventEmitter {
         this.counterResetTimers.delete(key);
       }
     }
-    return this.skills.delete(id);
+    const deleted = this.skills.delete(id);
+    this.persist();
+    return deleted;
   }
 
   listSkills(spaceId?: string): CoreSkill[] {
@@ -460,5 +466,11 @@ export class SkillExecutor extends EventEmitter {
       case '!=': return actual !== expected;
       default: return false;
     }
+  }
+
+  private persist(): void {
+    if (!this.opts.persistence) return;
+    const allSkills = Array.from(this.skills.values());
+    this.opts.persistence.save(allSkills);
   }
 }
