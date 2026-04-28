@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SpaceManager } from '../src/engine/SpaceManager';
 import type { Space, CoreSkill } from '../src/shared/types';
 
-const mockModeManager = { getMode: vi.fn(() => 'listen'), setMode: vi.fn(), on: vi.fn(), clearIdleTimer: vi.fn() };
+const mockModeManager = { getMode: vi.fn(() => 'listen'), setMode: vi.fn(), transition: vi.fn(() => true), on: vi.fn(), clearIdleTimer: vi.fn() };
 const mockMcpServer = {
   notification: vi.fn().mockResolvedValue(undefined),
 };

@@ -7,6 +7,7 @@ import type { CoreSkill, ObservabilityEvent } from '../src/shared/types';
 const mockModeManager = {
   getMode: vi.fn(() => 'listen'),
   setMode: vi.fn(),
+  transition: vi.fn(() => true),
   on: vi.fn(),
   clearIdleTimer: vi.fn(),
   handleModeCommand: vi.fn(),

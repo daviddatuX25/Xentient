@@ -114,9 +114,9 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 **Plans**: 5 plans
 - [x] 06-01: CoreSkill, Space, Mode, SkillLog types (`shared/types.ts` + `contracts.ts`)
 - [x] 06-02: SkillExecutor — tick loop, L1 actions, escalation pipeline, conflict detection
-- [ ] 06-03: SpaceManager + 8 MCP skill management tools (register/update/disable/remove/list/log/switch_mode/resolve_conflict)
-- [ ] 06-04: Wire SpaceManager into `core.ts` — default Space, MQTT forwarding, SSE relay
-- [ ] 06-05: Vitest tests for SkillLog, SkillExecutor, SpaceManager
+- [x] 06-03: SpaceManager + 8 MCP skill management tools (register/update/disable/remove/list/log/switch_mode/resolve_conflict)
+- [x] 06-04: Wire SpaceManager into `core.ts` — default Space, MQTT forwarding, SSE relay
+- [x] 06-05: Vitest tests for SkillLog, SkillExecutor, SpaceManager
 
 ## Progress
 
@@ -127,7 +127,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 3. Web & Assembly | 0/2 | Not started | - |
 | 4. Optimization | 0/1 | Not started | - |
 | 5. Doc Refactor | 3/3 | Complete | 05-01, 05-02, 05-03 |
-| 6. Xentient Layers | 2/5 | In progress | 06-01, 06-02 |
+| 6. Xentient Layers | 5/5 | Complete | 06-01 through 06-05 |
 
 ## Document Architecture
 
@@ -141,4 +141,4 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 
 ---
 *Roadmap defined: 2026-04-13*
-*Last updated: 2026-04-28 — Demo scope reduced (breadboard prototype, no casing). Phase 5 complete. Phase 6 Waves 1-2 done. Beads aligned.*
+*Last updated: 2026-04-28 — Phase 6 complete (all 5 waves). Demo scope reduced (breadboard prototype, no casing).*
