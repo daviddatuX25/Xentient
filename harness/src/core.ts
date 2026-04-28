@@ -224,13 +224,13 @@ async function main() {
 
   // Relay SkillExecutor observability events to dashboard via SSE
   spaceManager.on('skill_fired', (event: any) => {
-    controlServer.broadcastSkillEvent({ type: 'skill_fired', ...event });
+    controlServer.broadcastSSE({ type: 'skill_fired', ...event });
   });
   spaceManager.on('skill_escalated', (event: any) => {
-    controlServer.broadcastSkillEvent({ type: 'skill_escalated', ...event });
+    controlServer.broadcastSSE({ type: 'skill_escalated', ...event });
   });
   spaceManager.on('skill_conflict', (event: any) => {
-    controlServer.broadcastSkillEvent({ type: 'skill_conflict', ...event });
+    controlServer.broadcastSSE({ type: 'skill_conflict', ...event });
   });
 
   await controlServer.start();

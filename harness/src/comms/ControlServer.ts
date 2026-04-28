@@ -10,7 +10,9 @@ import { EventBridge } from "./EventBridge";
 import { PackLoader } from "../engine/PackLoader";
 import { SkillLog } from "../engine/SkillLog";
 import { MicroRouter } from "./MicroRouter";
-import type { SensorCache } from "../shared/types";
+import type { CoreSkill, SensorCache } from "../shared/types";
+import { MODE_TRANSITIONS, PERIPHERAL_IDS } from "../shared/contracts";
+import type { EventMapping } from "./EventBridge";
 import pino from "pino";
 
 const logger = pino({ name: "control-server" }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
@@ -59,6 +61,12 @@ export class ControlServer extends EventEmitter {
 
   private static MAX_BODY_SIZE = 64 * 1024; // 64KB max request body
 
+  /** Fields that may be updated via PATCH /api/skills/:id */
+  private static PATCHABLE_FIELDS = new Set([
+    'enabled', 'displayName', 'trigger', 'actions', 'priority',
+    'cooldownMs', 'modeFilter', 'escalation', 'collect',
+  ]);
+
   constructor(deps: ControlServerDeps, port: number) {
     super();
     this.deps = deps;
@@ -97,7 +105,29 @@ export class ControlServer extends EventEmitter {
       .add("POST", "/api/trigger", this.handleTrigger.bind(this))
       .add("POST", "/api/vad", this.handleVad.bind(this))
       .add("POST", "/api/text", this.handleText.bind(this))
-      .add("GET", "/api/camera", this.handleGetCamera.bind(this));
+      .add("GET", "/api/camera", this.handleGetCamera.bind(this))
+      // Skills — NOTE: /api/skill-log before /api/skills/:id to avoid 'log' captured as :id
+      .add("GET", "/api/skill-log", this.handleGetSkillLog.bind(this))
+      .add("GET", "/api/skills", this.handleListSkills.bind(this))
+      .add("GET", "/api/skills/:id", this.handleGetSkill.bind(this))
+      .add("POST", "/api/skills", this.handleCreateSkill.bind(this))
+      .add("PATCH", "/api/skills/:id", this.handleUpdateSkill.bind(this))
+      .add("DELETE", "/api/skills/:id", this.handleDeleteSkill.bind(this))
+      // Packs
+      .add("GET", "/api/packs", this.handleListPacks.bind(this))
+      .add("POST", "/api/packs/:name/load", this.handleLoadPack.bind(this))
+      .add("POST", "/api/packs/:name/reload", this.handleReloadPack.bind(this))
+      // Spaces
+      .add("GET", "/api/spaces", this.handleListSpaces.bind(this))
+      .add("POST", "/api/spaces/:id/mode", this.handleSetSpaceMode.bind(this))
+      // Event Mappings
+      .add("GET", "/api/event-mappings", this.handleListEventMappings.bind(this))
+      .add("POST", "/api/event-mappings", this.handleAddEventMapping.bind(this))
+      .add("DELETE", "/api/event-mappings/:id", this.handleRemoveEventMapping.bind(this))
+      // Sensor History (backed by SensorHistory — added in 08-05)
+      .add("GET", "/api/sensors/history", this.handleGetSensorHistory.bind(this))
+      // Config (frontend constants — Expansion 6.4)
+      .add("GET", "/api/config", this.handleGetConfig.bind(this));
   }
 
   start(): Promise<void> {
@@ -140,7 +170,7 @@ export class ControlServer extends EventEmitter {
 
     // 1. CORS headers for API requests
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     // 2. CORS preflight
@@ -283,6 +313,275 @@ export class ControlServer extends EventEmitter {
     }
   }
 
+  // ── Skill Endpoints ──────────────────────────────────────────────────
+
+  /** Serialize a CoreSkill for API responses (strip internal fields) */
+  private serializeSkill(skill: CoreSkill): object {
+    return {
+      id: skill.id,
+      displayName: skill.displayName,
+      enabled: skill.enabled,
+      spaceId: skill.spaceId,
+      trigger: skill.trigger,
+      priority: skill.priority,
+      actions: skill.actions,
+      collect: skill.collect,
+      escalation: skill.escalation,
+      source: skill.source,
+      cooldownMs: skill.cooldownMs,
+      fireCount: skill.fireCount,
+      lastFiredAt: skill.lastFiredAt,
+      escalationCount: skill.escalationCount,
+      modeFilter: skill.modeFilter,
+      _pack: skill._pack,
+    };
+  }
+
+  private async handleListSkills(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const skills = this.deps.spaceManager.listSkills();
+    this.sendJSON(res, 200, skills.map(s => this.serializeSkill(s)));
+  }
+
+  private async handleGetSkill(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+    const { id } = params;
+    const skill = this.deps.spaceManager.listSkills().find(s => s.id === id);
+    if (!skill) {
+      this.sendJSON(res, 404, { error: `Skill '${id}' not found` });
+      return;
+    }
+    this.sendJSON(res, 200, this.serializeSkill(skill));
+  }
+
+  private async handleCreateSkill(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const body = await this.parseBody(req) as Record<string, unknown>;
+    const id = String(body.id ?? '');
+    if (!id) {
+      this.sendJSON(res, 400, { error: 'Skill ID is required' });
+      return;
+    }
+    // Check for existing skill — 409 Conflict
+    const existing = this.deps.spaceManager.listSkills().find(s => s.id === id);
+    if (existing) {
+      this.sendJSON(res, 409, { error: `Skill '${id}' already exists (source: ${existing.source}). Use PATCH to update.` });
+      return;
+    }
+    // Construct CoreSkill from request body
+    const skill: CoreSkill = {
+      id,
+      displayName: String(body.displayName ?? id),
+      enabled: body.enabled !== undefined ? Boolean(body.enabled) : true,
+      spaceId: String(body.spaceId ?? '*'),
+      trigger: body.trigger as CoreSkill['trigger'] ?? { type: 'event', event: 'manual_trigger' },
+      priority: Number(body.priority ?? 50),
+      actions: Array.isArray(body.actions) ? body.actions as CoreSkill['actions'] : [],
+      collect: Array.isArray(body.collect) ? body.collect as CoreSkill['collect'] : undefined,
+      escalation: body.escalation as CoreSkill['escalation'] ?? undefined,
+      source: 'brain',
+      cooldownMs: Number(body.cooldownMs ?? 0),
+      fireCount: 0,
+      escalationCount: 0,
+      modeFilter: body.modeFilter as CoreSkill['modeFilter'] ?? undefined,
+    };
+    this.deps.spaceManager.registerSkill(skill);
+    this.sendJSON(res, 201, { ok: true, skill: this.serializeSkill(skill) });
+  }
+
+  private async handleUpdateSkill(req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+    const { id } = params;
+    const body = await this.parseBody(req) as Record<string, unknown>;
+
+    // Filter to allowlisted fields only
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (ControlServer.PATCHABLE_FIELDS.has(key)) patch[key] = value;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      this.sendJSON(res, 400, { error: 'No patchable fields provided', patchableFields: [...ControlServer.PATCHABLE_FIELDS] });
+      return;
+    }
+
+    const skill = this.deps.spaceManager.listSkills().find(s => s.id === id);
+    if (!skill) {
+      this.sendJSON(res, 404, { error: `Skill '${id}' not found` });
+      return;
+    }
+
+    this.deps.spaceManager.updateSkill(id, patch);
+    this.sendJSON(res, 200, { ok: true, patched: Object.keys(patch) });
+  }
+
+  private async handleDeleteSkill(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+    const { id } = params;
+    const skill = this.deps.spaceManager.listSkills().find(s => s.id === id);
+    if (!skill) {
+      this.sendJSON(res, 404, { error: `Skill '${id}' not found` });
+      return;
+    }
+    if (skill.source === 'builtin') {
+      this.sendJSON(res, 403, { error: `Cannot remove builtin skill '${id}'` });
+      return;
+    }
+    if (skill.source === 'pack') {
+      this.sendJSON(res, 403, { error: `Cannot remove pack-managed skill '${id}'. Unload the pack instead.` });
+      return;
+    }
+    this.deps.spaceManager.removeSkill(id);
+    this.sendJSON(res, 200, { ok: true, removed: id });
+  }
+
+  private async handleGetSkillLog(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const url = new URL(req.url!, `http://localhost`);
+    const limit = Number(url.searchParams.get('limit') ?? '100');
+    const filter = {
+      spaceId: url.searchParams.get('spaceId') ?? undefined,
+      skillId: url.searchParams.get('skillId') ?? undefined,
+      since: url.searchParams.get('since') ? Number(url.searchParams.get('since')) : undefined,
+      limit,
+    };
+    const entries = this.deps.skillLog.query(filter);
+    this.sendJSON(res, 200, entries);
+  }
+
+  // ── Pack Endpoints ───────────────────────────────────────────────────
+
+  private async handleListPacks(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const available = this.deps.packLoader.listAvailablePacks();
+    const loaded = this.deps.packLoader.getLoadedPack();
+    this.sendJSON(res, 200, { available, loaded });
+  }
+
+  private async handleLoadPack(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+    const { name } = params;
+    try {
+      this.deps.packLoader.loadPack(name);
+      this.sendJSON(res, 200, { ok: true, loaded: name });
+    } catch (err) {
+      this.sendJSON(res, 400, { error: String((err as Error).message) });
+    }
+  }
+
+  private async handleReloadPack(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    try {
+      this.deps.packLoader.reload();
+      const loaded = this.deps.packLoader.getLoadedPack();
+      this.sendJSON(res, 200, { ok: true, loaded });
+    } catch (err) {
+      this.sendJSON(res, 400, { error: String((err as Error).message) });
+    }
+  }
+
+  // ── Space Endpoints ──────────────────────────────────────────────────
+
+  private async handleListSpaces(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const skills = this.deps.spaceManager.listSkills();
+    // Deduplicate space IDs from skills
+    const spaceIds = [...new Set(skills.map(s => s.spaceId))];
+    const spaces = spaceIds.map(id => ({
+      id,
+      mode: this.deps.modeManager.getMode(),
+      skillCount: skills.filter(s => s.spaceId === id || s.spaceId === '*').length,
+    }));
+    this.sendJSON(res, 200, spaces);
+  }
+
+  private async handleSetSpaceMode(req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+    const { id } = params;
+    const body = await this.parseBody(req) as Record<string, unknown>;
+    const mode = String(body.mode ?? '');
+    if (!mode || !['sleep', 'listen', 'active', 'record'].includes(mode)) {
+      this.sendJSON(res, 400, { error: 'Invalid mode. Use: sleep, listen, active, record' });
+      return;
+    }
+    // Check that the space exists
+    const skills = this.deps.spaceManager.listSkills();
+    const spaceIds = [...new Set(skills.map(s => s.spaceId))];
+    if (!spaceIds.includes(id) && id !== 'default') {
+      this.sendJSON(res, 404, { error: `Space '${id}' not found` });
+      return;
+    }
+    this.deps.spaceManager.switchMode(id, mode);
+    this.sendJSON(res, 200, { ok: true, spaceId: id, mode });
+  }
+
+  // ── Event Mapping Endpoints ──────────────────────────────────────────
+
+  /** Serialize an EventMapping for API responses (strip functions) */
+  private serializeMapping(m: EventMapping): object {
+    return {
+      id: m.id,
+      protected: m.protected ?? false,
+      source: m.source,
+      eventName: m.eventName,
+      hasFilter: typeof m.filter === 'function',
+      hasTransform: typeof m.transform === 'function',
+    };
+  }
+
+  private async handleListEventMappings(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const mappings = this.deps.eventBridge.listMappings();
+    this.sendJSON(res, 200, mappings.map(m => this.serializeMapping(m)));
+  }
+
+  private async handleAddEventMapping(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const body = await this.parseBody(req) as Record<string, unknown>;
+    const source = String(body.source ?? '');
+    const eventName = String(body.eventName ?? '');
+    const validSources = ['mqtt:sensor', 'mqtt:triggerPipeline', 'mode', 'custom'];
+    if (!validSources.includes(source)) {
+      this.sendJSON(res, 400, { error: `Invalid source. Valid: ${validSources.join(', ')}` });
+      return;
+    }
+    if (!eventName) {
+      this.sendJSON(res, 400, { error: 'eventName is required' });
+      return;
+    }
+    const id = this.deps.eventBridge.addCustomMapping(
+      source as import('./EventBridge').EventSource,
+      eventName,
+    );
+    this.sendJSON(res, 201, { ok: true, id, source, eventName });
+  }
+
+  private async handleRemoveEventMapping(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+    const { id } = params;
+    const removed = this.deps.eventBridge.removeMapping(id);
+    if (!removed) {
+      // Could be not found or protected — check which
+      const mappings = this.deps.eventBridge.listMappings();
+      const mapping = mappings.find(m => m.id === id);
+      if (mapping?.protected) {
+        this.sendJSON(res, 403, { error: `Cannot remove protected mapping '${id}'` });
+      } else {
+        this.sendJSON(res, 404, { error: `Mapping '${id}' not found` });
+      }
+      return;
+    }
+    this.sendJSON(res, 200, { ok: true, removed: id });
+  }
+
+  // ── Sensor History Endpoint ──────────────────────────────────────────
+
+  private async handleGetSensorHistory(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const url = new URL(req.url!, `http://localhost`);
+    const since = url.searchParams.get('since') ? Number(url.searchParams.get('since')) : undefined;
+    const readings = this.deps.sensorHistory.query(since);
+    this.sendJSON(res, 200, readings);
+  }
+
+  // ── Config Endpoint ──────────────────────────────────────────────────
+
+  private async handleGetConfig(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    this.sendJSON(res, 200, {
+      modeTransitions: MODE_TRANSITIONS,
+      availableModes: Object.keys(MODE_TRANSITIONS),
+      triggerTypes: ['event', 'interval', 'sensor', 'mode', 'cron', 'internal', 'composite'],
+      peripheralIds: Object.fromEntries(
+        Object.entries(PERIPHERAL_IDS).map(([k, v]) => [k, v]),
+      ),
+    });
+  }
+
   // ── Static File Serving ─────────────────────────────────────────────
 
   private async serveStatic(_req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -305,7 +604,8 @@ export class ControlServer extends EventEmitter {
 
   // ── SSE Broadcasting ────────────────────────────────────────────────
 
-  private broadcastSSE(data: object): void {
+  /** Broadcast an SSE event to all connected dashboard clients. */
+  broadcastSSE(data: object): void {
     const msg = `data: ${JSON.stringify(data)}\n\n`;
     for (const client of this.sseClients) {
       try {
@@ -316,9 +616,24 @@ export class ControlServer extends EventEmitter {
     }
   }
 
-  /** Push skill observability events to SSE dashboard clients */
-  broadcastSkillEvent(data: object): void {
-    this.broadcastSSE(data);
+  /** Throttled sensor update: max 1 broadcast per second. */
+  private sensorThrottleTimer: NodeJS.Timeout | null = null;
+  private lastSensorBroadcast = 0;
+  private static THROTTLE_MS = 1000;
+
+  broadcastThrottledSensor(data: { temperature: number | null; humidity: number | null; pressure: number | null }): void {
+    const now = Date.now();
+    if (now - this.lastSensorBroadcast >= ControlServer.THROTTLE_MS) {
+      this.lastSensorBroadcast = now;
+      this.broadcastSSE({ type: 'sensor_update', ...data });
+    } else if (!this.sensorThrottleTimer) {
+      const delay = ControlServer.THROTTLE_MS - (now - this.lastSensorBroadcast);
+      this.sensorThrottleTimer = setTimeout(() => {
+        this.sensorThrottleTimer = null;
+        this.lastSensorBroadcast = Date.now();
+        this.broadcastSSE({ type: 'sensor_update', ...data });
+      }, delay);
+    }
   }
 
   // ── Body Parsing ────────────────────────────────────────────────────
