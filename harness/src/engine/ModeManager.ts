@@ -72,6 +72,7 @@ export class ModeManager extends EventEmitter {
     this.publishDisplayUpdate(to);
     this.resetIdleTimer();
     this.emit("modeChange", { from, to } satisfies ModeChangeEvent);
+    this.emit("mode_change", { from, to, timestamp: Date.now() });
 
     return true;
   }
@@ -91,6 +92,7 @@ export class ModeManager extends EventEmitter {
     this.publishDisplayUpdate(mode);
     this.resetIdleTimer();
     this.emit("modeChange", { from, to: mode } satisfies ModeChangeEvent);
+    this.emit("mode_change", { from, to: mode, timestamp: Date.now() });
   }
 
   /** Handle inbound mode_set command (MQTT). Validates and applies transition. */
