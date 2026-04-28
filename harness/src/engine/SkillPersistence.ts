@@ -7,6 +7,7 @@ const logger = pino({ name: 'skill-persistence' }, process.stderr);
 
 export class SkillPersistence {
   private filePath: string;
+  private saveTimer: NodeJS.Timeout | null = null;
 
   constructor(private dataDir: string) {
     this.filePath = path.join(dataDir, 'skills.json');
@@ -41,10 +42,30 @@ export class SkillPersistence {
       if (!fs.existsSync(this.dataDir)) {
         fs.mkdirSync(this.dataDir, { recursive: true });
       }
-      fs.writeFileSync(this.filePath, JSON.stringify(brainSkills, null, 2), 'utf-8');
+      const tmpPath = this.filePath + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(brainSkills, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, this.filePath);
       logger.info({ count: brainSkills.length }, 'Persisted skills saved');
     } catch (err) {
       logger.error({ err }, 'Failed to persist skills');
     }
+  }
+
+  /** Debounced save — batches writes within 500ms window. */
+  debouncedSave(skills: CoreSkill[]): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save(skills);
+      this.saveTimer = null;
+    }, 500);
+  }
+
+  /** Flush any pending debounced save immediately. */
+  flush(skills: CoreSkill[]): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.save(skills);
   }
 }

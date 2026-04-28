@@ -28,10 +28,16 @@ export class PackLoader {
     const parsed = JSON.parse(raw);
     const manifest = PackSkillManifestSchema.parse(parsed);
 
-    this.unloadCurrentPack();
-
+    // Phase 1: Expand all skills — if any fails, nothing is loaded
+    const expanded: CoreSkill[] = [];
     for (const ps of manifest.skills) {
       const skill = this.expandPackSkill(ps, manifest.pack.name);
+      expanded.push(skill);
+    }
+
+    // Phase 2: All expansions succeeded — apply
+    this.unloadCurrentPack();
+    for (const skill of expanded) {
       this.registerFn(skill);
       this.loadedSkillIds.push(skill.id);
     }

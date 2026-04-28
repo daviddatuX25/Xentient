@@ -29,6 +29,7 @@ export interface SkillExecutorOptions {
   getCameraFrame?: () => string | undefined;
   onObservabilityEvent: (event: ObservabilityEvent) => void;
   persistence?: SkillPersistence;
+  getBrainConnected?: () => boolean;
 }
 
 export class SkillExecutor extends EventEmitter {
@@ -58,6 +59,11 @@ export class SkillExecutor extends EventEmitter {
   }
 
   stop(): void {
+    // Flush any pending persistence writes before shutdown
+    if (this.opts.persistence) {
+      const allSkills = Array.from(this.skills.values());
+      this.opts.persistence.flush(allSkills);
+    }
     if (this.tickHandle) clearInterval(this.tickHandle);
     for (const [, task] of this.cronHandles) task.stop();
     for (const [, handle] of this.intervalHandles) clearInterval(handle);
@@ -171,7 +177,7 @@ export class SkillExecutor extends EventEmitter {
     const candidates: CoreSkill[] = [];
     for (const skill of this.skills.values()) {
       if (!skill.enabled || !this.matchesSpace(skill)) continue;
-      if (skill.trigger.type !== 'sensor') continue;
+      if (skill.trigger.type !== 'sensor' && skill.trigger.type !== 'composite') continue;
       if (this.evaluateTrigger(skill.trigger, { ...ctx, _skillId: skill.id })) candidates.push(skill);
     }
 
@@ -367,7 +373,7 @@ export class SkillExecutor extends EventEmitter {
       spaceId: this.opts.spaceId,
       event: skill.escalation!.event,
       priority: skill.escalation!.priority,
-      brainConnected: true,
+      brainConnected: this.opts.getBrainConnected?.() ?? true,
       timestamp: firedAt,
     };
     this.opts.onObservabilityEvent(event);
@@ -401,9 +407,15 @@ export class SkillExecutor extends EventEmitter {
     this.opts.onObservabilityEvent(conflictEvent);
 
     const timeoutHandle = setTimeout(() => {
+      const alive = skills.filter(s => this.skills.has(s.id));
+      if (alive.length === 0) {
+        logger.info({ group }, 'Conflict timeout — all conflicting skills removed, skipping');
+        this.pendingConflicts.delete(group);
+        return;
+      }
       logger.warn({ group }, 'Conflict timeout — falling back to priority ordering');
       this.pendingConflicts.delete(group);
-      const sorted = [...skills].sort((a, b) => a.priority - b.priority);
+      const sorted = [...alive].sort((a, b) => a.priority - b.priority);
       this.fireSkill(sorted[0], triggerData);
     }, CONFLICT_TIMEOUT_MS);
 
@@ -471,6 +483,6 @@ export class SkillExecutor extends EventEmitter {
   private persist(): void {
     if (!this.opts.persistence) return;
     const allSkills = Array.from(this.skills.values());
-    this.opts.persistence.save(allSkills);
+    this.opts.persistence.debouncedSave(allSkills);
   }
 }

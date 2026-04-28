@@ -52,6 +52,7 @@ export class SpaceManager extends EventEmitter {
       getCameraFrame: this.getCameraFrame,
       onObservabilityEvent: (event) => this.broadcastObservabilityEvent(event),
       persistence: this.persistence,
+      getBrainConnected: () => true,  // v1: stdio transport is always connected while process runs
     });
 
     // Wire LCD/chime emission from executor to MCP notifications

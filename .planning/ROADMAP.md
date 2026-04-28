@@ -14,7 +14,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 4: Optimization & Demo Prep | Latency + prototype video demo | Not started |
 | 5: Doc Architecture Refactor | Restructure docs to bridge model | Complete |
 | 6: Xentient Layers | CoreSkill, SkillExecutor, SpaceManager, MCP tools | Complete |
-| 7: Skill Engine Hardening | Gap fixes (G1-G6) + Pack Loader + Skill Persistence | In Progress |
+| 7: Skill Engine Hardening | Gap fixes (G1-G6) + Pack Loader + Skill Persistence | **Complete** |
 
 **Phase 2 Note:** **Phase 2 is SUPERSEDED.** The n8n-style orchestration vision has been replaced by the bridge model (see docs/VISION.md). The custom memory layer (MEM-01/02/03) will be replaced by Hermes+Mem0 integration in Platform Track P1-P2. Phase 2 deliverables that still ship in the demo (voice pipeline, MQTT bridge, basic memory) are carried forward as-is.
 
@@ -141,11 +141,11 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
   7. Skills loaded from `packs/default/skills.json` appear in `xentient_list_skills`.
   8. Brain-registered skills persist across Core restart.
 **Plans**: 5 plans
-- [ ] 07-01: Gap Fixes — mode triggers, composite evaluation, modeFilter, remove _idle-sleep, DataCollector
-- [ ] 07-02: Generic MQTT Event Bridge — configurable event routing, no hardcoding
-- [ ] 07-03: Pack Skill Loader — PackSkillManifest, Zod validation, hot-reload
-- [ ] 07-04: Skill Persistence — var/skills.json, brain skills survive restart
-- [ ] 07-05: Tests — Vitest for all gap fixes + EventBridge + PackLoader + Persistence
+- [x] 07-01: Gap Fixes — mode triggers, composite evaluation, modeFilter, remove _idle-sleep, DataCollector
+- [x] 07-02: Generic MQTT Event Bridge — configurable event routing, no hardcoding
+- [x] 07-03: Pack Skill Loader — PackSkillManifest, Zod validation, hot-reload
+- [x] 07-04: Skill Persistence — var/skills.json, brain skills survive restart
+- [x] 07-05: Tests — Vitest for all gap fixes + EventBridge + PackLoader + Persistence
 
 ## Progress
 
@@ -157,7 +157,7 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 | 4. Optimization | 0/1 | Not started | - |
 | 5. Doc Refactor | 3/3 | Complete | 05-01, 05-02, 05-03 |
 | 6. Xentient Layers | 5/5 | Complete | 06-01 through 06-05 |
-| 7. Skill Engine Hardening | 0/5 | In Progress | - |
+| 7. Skill Engine Hardening | 5/5 | Complete | 07-01 through 07-05 |
 
 ## Document Architecture
 
@@ -171,4 +171,4 @@ Xentient is the IoT terminal — a thin voice/hardware bridge that lets any AI b
 
 ---
 *Roadmap defined: 2026-04-13*
-*Last updated: 2026-04-28 — Phase 7 planned (5 plans). Phase 1+5+6 complete. Next: 07-01 Gap Fixes.*
+*Last updated: 2026-04-28 — Phase 7 complete (5/5 plans). Phase 1+5+6+7 complete. Next: Phase 3.*

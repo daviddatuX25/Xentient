@@ -77,6 +77,15 @@ export interface CoreSkill {
 
 // ---- Triggers ----
 
+/**
+ * SkillTrigger — defines what activates a skill.
+ *
+ * Note on composite triggers (v1): Only sensor sub-triggers work inside
+ * { type: 'composite', all: [...] }. Cron, interval, mode, and event
+ * sub-triggers are NOT evaluated within composites — they are handled
+ * by their own dispatch paths (tick loop, cron scheduler, EventBridge).
+ * See SkillExecutor.evaluateTrigger() for the implementation.
+ */
 export type SkillTrigger =
   | { type: 'cron'; schedule: string }
   | { type: 'interval'; everyMs: number }
@@ -103,6 +112,18 @@ export type ChimePreset = 'morning' | 'alert' | 'chime';
 
 // ---- Data Collection (for escalation context) ----
 
+/**
+ * DataCollector — defines how a skill accumulates data for escalation context.
+ *
+ * Counter namespace: counters use a flat, shared namespace across all skills
+ * in the same executor. If two skills define a counter named "alertCount",
+ * they share the same counter. Use unique names (e.g., "mySkill_alertCount")
+ * to avoid collisions.
+ *
+ * Reset timers: resetAfterMs is per-skill — each skill that defines a collector
+ * gets its own reset timer (keyed by `${skillId}:${collectorName}`). Removing
+ * the skill clears its timers, but does NOT reset the counter value.
+ */
 export interface DataCollector {
   type: 'counter';
   name: string;

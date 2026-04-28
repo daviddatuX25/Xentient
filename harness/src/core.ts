@@ -148,7 +148,27 @@ async function main() {
     }
   });
 
+  // CRITICAL: Listener registration order determines execution sequence.
+  // Node.js EventEmitter calls listeners in registration order (FIFO).
+  // The correct order for modeChange listeners is:
+  //   1. Logger (above — already registered)
+  //   2. updateSpaceMode (syncs SpaceMode so skills see correct mode)
+  //   3. EventBridge (dispatches to skill system — must see correct SpaceMode)
+  // If EventBridge fires before updateSpaceMode, skills querying SpaceMode
+  // during mode-triggered execution will see stale state.
+  // NOTE: updateSpaceMode only reads spaceManager.spaces (populated by addSpace
+  // at line 91). It does NOT depend on EventBridge, PackLoader, or ControlServer,
+  // so placing it before those components is safe.
+  modeManager.on("modeChange", ({ from, to }) => {
+    spaceManager.updateSpaceMode('default', to);
+    logger.info({ from, to }, 'Mode transition — SpaceMode synced');
+  });
+
   // --- EventBridge: declarative MQTT/Mode → Skill event routing ---
+  // NOTE: EventBridge dispatches events to the Skill system. The MCP notification
+  // path (wireMcpEvents in mcp/events.ts) updates sensor cache and notifies Brain.
+  // Both paths subscribe to the same MQTT events but serve different purposes.
+  // See EventBridge.ts header for details.
   const eventBridge = new EventBridge(mqtt, spaceManager, modeManager);
   eventBridge.start();
 
@@ -172,12 +192,6 @@ async function main() {
       logger.error({ err }, 'Failed to load default pack — continuing without pack skills');
     }
   }
-
-  // Keep SpaceMode in sync when ModeManager transitions hardware state
-  modeManager.on("modeChange", ({ from, to }) => {
-    spaceManager.updateSpaceMode('default', to);
-    logger.info({ from, to }, 'Mode transition — SpaceMode synced');
-  });
 
   // Control server - HTTP API + static files + SSE for browser test page
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
