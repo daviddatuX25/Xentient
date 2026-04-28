@@ -314,3 +314,35 @@ export const EVENT_BRIDGE_TOOLS = {
   REMOVE_MAPPING: 'xentient_remove_event_mapping',
   LIST_MAPPINGS: 'xentient_list_event_mappings',
 } as const;
+
+// ── Pack Skill Manifest Zod Schema ─────────────────────────────────
+const PackMetaSchema = z.object({
+  name: z.string().min(1),
+  version: z.string().min(1),
+  description: z.string().optional(),
+  author: z.string().optional(),
+});
+
+const PackSkillSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  trigger: z.record(z.unknown()),
+  actions: z.array(z.record(z.unknown())),
+  modeFilter: z.string().optional(),
+  priority: z.number().int().min(0).max(100).optional(),
+  cooldownMs: z.number().int().min(0).optional(),
+  escalation: z.record(z.unknown()).optional(),
+  collect: z.array(z.record(z.unknown())).optional(),
+});
+
+export const PackSkillManifestSchema = z.object({
+  pack: PackMetaSchema,
+  skills: z.array(PackSkillSchema),
+});
+
+// ── Pack Management MCP Tool names ──────────────────────────────────
+export const PACK_TOOLS = {
+  LOAD_PACK: 'xentient_load_pack',
+  LIST_PACKS: 'xentient_list_packs',
+  RELOAD_PACK: 'xentient_reload_pack',
+} as const;

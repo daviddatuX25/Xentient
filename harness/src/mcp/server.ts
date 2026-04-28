@@ -234,6 +234,34 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
     async () => handlers.xentient_list_event_mappings(),
   );
 
+  // ============================================================
+  // PACK MANAGEMENT TOOLS — Phase 7 Plan 07-03
+  // Load, list, and reload skill packs
+  // ============================================================
+
+  server.tool(
+    'xentient_load_pack',
+    'Unload current pack (if any) and load a new skill pack by name',
+    {
+      packName: z.string().describe('Name of the pack directory under packs/'),
+    } as any,
+    async ({ packName }: { packName: string }) => handlers.xentient_load_pack({ packName }),
+  );
+
+  server.tool(
+    'xentient_list_packs',
+    'List available skill packs and show which one is active',
+    {} as any,
+    async () => handlers.xentient_list_packs(),
+  );
+
+  server.tool(
+    'xentient_reload_pack',
+    'Reload the currently active pack from disk (hot-reload)',
+    {} as any,
+    async () => handlers.xentient_reload_pack(),
+  );
+
   // Wire push-based events from Core subsystems -> Brain
   wireMcpEvents(server, deps.mqtt, deps.modeManager, deps.sensorCache);
 

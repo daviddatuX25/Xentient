@@ -5,6 +5,7 @@ import type { CameraServer } from "../comms/CameraServer";
 import type { EventBridge } from "../comms/EventBridge";
 import type { ModeManager } from "../engine/ModeManager";
 import type { SpaceManager } from "../engine/SpaceManager";
+import type { PackLoader } from "../engine/PackLoader";
 import type { SensorCache, CoreSkill } from "../shared/types"; // RF-5: moved from here to shared to avoid comms↔mcp circular dep
 import type { Mode } from "../shared/contracts";
 import pino from "pino";
@@ -19,6 +20,7 @@ export interface McpToolDeps {
   sensorCache: SensorCache;
   spaceManager?: SpaceManager; // SKILL TOOLS: wired in Wave 4 (core.ts)
   eventBridge?: EventBridge; // EVENT BRIDGE TOOLS: wired in core.ts
+  packLoader?: PackLoader; // PACK TOOLS: wired in core.ts
 }
 
 // NOTE: SensorCache interface is defined in src/shared/types.ts (Task 0.5) — do NOT redefine here
@@ -254,6 +256,44 @@ export function createToolHandlers(deps: McpToolDeps) {
         hasTransform: !!m.transform,
       }));
       return { content: [{ type: 'text' as const, text: JSON.stringify(mappings, null, 2) }] };
+    },
+
+    // ============================================================
+    // PACK MANAGEMENT TOOLS — Phase 7 Plan 07-03
+    // Load, list, and reload skill packs
+    // ============================================================
+
+    xentient_load_pack: async ({ packName }: { packName: string }) => {
+      if (!deps.packLoader) return { content: [{ type: 'text' as const, text: 'PackLoader not initialized' }], isError: true as const };
+      try {
+        deps.packLoader.loadPack(packName);
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, pack: packName }) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: message }) }], isError: true as const };
+      }
+    },
+
+    xentient_list_packs: async () => {
+      if (!deps.packLoader) return { content: [{ type: 'text' as const, text: 'PackLoader not initialized' }], isError: true as const };
+      const available = deps.packLoader.listAvailablePacks();
+      const active = deps.packLoader.getLoadedPack();
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ available, active }, null, 2) }] };
+    },
+
+    xentient_reload_pack: async () => {
+      if (!deps.packLoader) return { content: [{ type: 'text' as const, text: 'PackLoader not initialized' }], isError: true as const };
+      const active = deps.packLoader.getLoadedPack();
+      if (!active) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: 'No pack currently loaded' }) }], isError: true as const };
+      }
+      try {
+        deps.packLoader.reload();
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, pack: active }) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: message }) }], isError: true as const };
+      }
     },
   };
 }

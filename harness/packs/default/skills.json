@@ -1,0 +1,8 @@
+{
+  "pack": {
+    "name": "default",
+    "version": "1.0.0",
+    "description": "Default Xentient skill pack — placeholder for custom skills"
+  },
+  "skills": []
+}

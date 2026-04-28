@@ -72,6 +72,7 @@ export interface CoreSkill {
   escalationCount: number;
 
   modeFilter?: BehavioralMode;
+  _pack?: string; // Set when source='pack' — the pack name this skill came from
 }
 
 // ---- Triggers ----
@@ -201,4 +202,28 @@ export interface PendingConflict {
   triggerData: Record<string, unknown>;
   startedAt: number;
   timeoutHandle: ReturnType<typeof setTimeout>;
+}
+
+// ---- Pack Skill Manifest ----
+
+export interface PackSkillManifest {
+  pack: {
+    name: string;
+    version: string;
+    description?: string;
+    author?: string;
+  };
+  skills: PackSkill[];
+}
+
+export interface PackSkill {
+  id: string;
+  displayName: string;
+  trigger: SkillTrigger;
+  actions: CoreAction[];
+  modeFilter?: BehavioralMode;
+  priority?: number;
+  cooldownMs?: number;
+  escalation?: EscalationConfig;
+  collect?: DataCollector[];
 }

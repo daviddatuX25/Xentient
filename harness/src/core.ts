@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
 dotenv.config();
 
+import fs from "fs";
 import path from "path";
 import config from "../config/default.json";
 import { MqttClient } from "./comms/MqttClient";
@@ -11,6 +12,7 @@ import { EventBridge } from "./comms/EventBridge";
 import { ModeManager } from "./engine/ModeManager";
 import { SpaceManager } from "./engine/SpaceManager";
 import { SkillPersistence } from "./engine/SkillPersistence";
+import { PackLoader } from "./engine/PackLoader";
 import { startMcpServer } from "./mcp/server";
 import type { SensorCache, Space } from "./shared/types";
 import { MCP_EVENTS, PROTOCOL_VERSION } from "./shared/contracts";
@@ -53,7 +55,7 @@ async function main() {
   // Start MCP server (stdio transport - brain processes connect here)
   // Mutable ref pattern: create deps object first, pass to startMcpServer,
   // then assign spaceManager after both mcpServer and spaceManager exist.
-  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge } = {
+  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge; packLoader?: PackLoader } = {
     mqtt,
     audio: audioServer,
     camera: cameraServer,
@@ -152,6 +154,24 @@ async function main() {
 
   // Wire eventBridge into MCP deps (for runtime mapping tools)
   mcpDeps.eventBridge = eventBridge;
+
+  // --- PackLoader: load skill packs from packs/ directory ---
+  const packsDir = path.join(process.cwd(), 'packs');
+  const packLoader = new PackLoader(
+    packsDir,
+    (skill) => spaceManager.registerSkill(skill),
+    (id) => spaceManager.removeSkill(id),
+  );
+  mcpDeps.packLoader = packLoader;
+
+  // Auto-load default pack if it exists
+  if (fs.existsSync(path.join(packsDir, 'default', 'skills.json'))) {
+    try {
+      packLoader.loadPack('default');
+    } catch (err) {
+      logger.error({ err }, 'Failed to load default pack — continuing without pack skills');
+    }
+  }
 
   // Keep SpaceMode in sync when ModeManager transitions hardware state
   modeManager.on("modeChange", ({ from, to }) => {
