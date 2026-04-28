@@ -194,6 +194,46 @@ h1, h2, h3, h4, h5, h6 {
   border-color: var(--accent);
 }
 
+/* ── Keyboard Focus Styles ─────────────────────────────────────── */
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skill-table tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.skill-table tr[tabindex]:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mapping-table tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.action-btn:focus-visible,
+.tab-btn:focus-visible,
+.skill-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.form-input:focus-visible,
+.form-select:focus-visible,
+.form-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.drawer-overlay:focus-visible {
+  outline: none;
+}
+
 /* ── Main Content ─────────────────────────────────────────────── */
 
 #content {
@@ -445,33 +485,44 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: var(--weight);
   font-size: 13px;
   padding: 12px 20px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-deep);
+  border-radius: 12px;
+  background: var(--bg-primary);
   color: var(--text-primary);
   border: 1px solid var(--card-border);
+  border-left: 3px solid var(--card-border);
   pointer-events: auto;
-  animation: toast-in 0.3s ease, toast-out 0.3s ease 2.7s forwards;
-  max-width: 320px;
+  animation: toast-slide-in 0.3s ease forwards, toast-slide-out 0.3s ease 4.7s forwards;
+  max-width: 360px;
+  backdrop-filter: blur(12px);
+  letter-spacing: 0.02em;
 }
 
 .toast.error {
-  border-color: var(--mode-record);
-  color: var(--mode-record);
+  border-left-color: var(--mode-record);
+  border-left-width: 3px;
+  color: var(--text-primary);
 }
 
 .toast.success {
-  border-color: var(--mode-listen);
-  color: var(--mode-listen);
+  border-left-color: var(--mode-listen);
+  border-left-width: 3px;
+  color: var(--text-primary);
 }
 
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+.toast.info {
+  border-left-color: var(--accent);
+  border-left-width: 3px;
+  color: var(--text-primary);
 }
 
-@keyframes toast-out {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(8px); }
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(100%) translateY(8px); }
+  to { opacity: 1; transform: translateX(0) translateY(0); }
+}
+
+@keyframes toast-slide-out {
+  from { opacity: 1; transform: translateX(0) translateY(0); }
+  to { opacity: 0; transform: translateX(100%) translateY(8px); }
 }
 
 /* ── Reconnect Banner ──────────────────────────────────────────── */
@@ -592,6 +643,64 @@ h1, h2, h3, h4, h5, h6 {
   .action-btn {
     font-size: 12px;
     padding: 6px 14px;
+  }
+
+  /* Bottom tab bar for mobile */
+  #nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-deep);
+    border-top: 1px solid var(--card-border);
+    padding: 8px 12px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    z-index: 100;
+    justify-content: space-around;
+  }
+
+  #content {
+    padding-bottom: 72px; /* Space for bottom nav */
+  }
+}
+
+/* ── Extra Small (375px) ────────────────────────────────────────── */
+
+@media (max-width: 375px) {
+  .skill-table {
+    font-size: 12px;
+  }
+
+  .skill-table th,
+  .skill-table td {
+    padding: 6px 8px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .tab-btn {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .gauge svg {
+    width: 80px;
+    height: 80px;
+  }
+
+  .gauge-value {
+    font-size: 18px;
+  }
+
+  .drawer-content {
+    width: 100%;
+  }
+
+  .toast {
+    max-width: 280px;
+    font-size: 12px;
   }
 }
 

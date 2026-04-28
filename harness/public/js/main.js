@@ -10,7 +10,7 @@ import { renderOverview, renderOverviewSkeleton } from './overview.js';
 import { renderSkills, flashSkillRow, refreshSkillList, refreshSkillPack } from './skills.js';
 import { renderTelemetry, handleSensorUpdate, handleSkillFired, handleSkillEscalated, handleSkillConflict, handleModeChange, reseedTelemetryData } from './telemetry.js';
 import { renderMode } from './mode.js';
-import { showToast, updateModeBadge, updateConnIndicator, updatePageTitle } from './components.js';
+import { showToast, updateModeBadge, updateConnIndicator, updatePageTitle, setupGlobalKeyboardShortcuts } from './components.js';
 
 // ─── State ─────────────────────────────────────────────────────────
 export const state = {
@@ -206,14 +206,17 @@ async function init() {
   const content = document.getElementById('content');
   content.innerHTML = renderOverviewSkeleton();
 
+  // Set up global keyboard shortcuts (Escape closes drawer)
+  setupGlobalKeyboardShortcuts();
+
   try {
     // Fetch initial state from REST endpoints
     const [status, sensors, skills, packs, config] = await Promise.all([
-      api.getStatus().catch(() => null),
-      api.getSensors().catch(() => null),
-      api.getSkills().catch(() => null),
-      api.getPacks().catch(() => null),
-      api.getConfig().catch(() => null),
+      api.getStatus().catch((err) => { console.warn('Failed to fetch status:', err.message); return null; }),
+      api.getSensors().catch((err) => { console.warn('Failed to fetch sensors:', err.message); return null; }),
+      api.getSkills().catch((err) => { console.warn('Failed to fetch skills:', err.message); return null; }),
+      api.getPacks().catch((err) => { console.warn('Failed to fetch packs:', err.message); return null; }),
+      api.getConfig().catch((err) => { console.warn('Failed to fetch config:', err.message); return null; }),
     ]);
 
     if (status) {
@@ -249,6 +252,7 @@ async function init() {
     sse.connect(onSSEEvent, onSSEDisconnect, onSSEReconnect);
   } catch (err) {
     showToast('Failed to initialize dashboard', 'error');
+    console.error('Dashboard init error:', err);
   }
 }
 

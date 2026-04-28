@@ -57,12 +57,13 @@ export function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
+  toast.setAttribute('role', 'alert');
   container.appendChild(toast);
 
-  // Remove after animation completes (3s total = 0.3s in + 2.4s display + 0.3s out)
+  // Remove after animation completes (5s total = 0.3s in + 4.4s display + 0.3s out)
   setTimeout(() => {
     toast.remove();
-  }, 3000);
+  }, 5000);
 }
 
 // ─── Gauge Component ───────────────────────────────────────────────
@@ -182,4 +183,79 @@ export function renderMotionIndicator(lastMotionAt) {
     <span class="motion-dot ${isActive ? 'active' : ''}"></span>
     <span>${timeStr}</span>
   </div>`;
+}
+
+// ─── Keyboard Navigation ──────────────────────────────────────────
+
+/**
+ * Set up keyboard navigation for skill table rows.
+ * Tab through rows, Enter opens detail, Space toggles enable/disable, Escape closes drawer.
+ */
+export function setupSkillKeyboardNav(tableBodyEl) {
+  if (!tableBodyEl) return;
+
+  tableBodyEl.addEventListener('keydown', (e) => {
+    const row = e.target.closest('tr[tabindex]');
+    if (!row) return;
+
+    switch (e.key) {
+      case 'Enter':
+        e.preventDefault();
+        row.click();
+        break;
+      case ' ':
+        e.preventDefault();
+        // Toggle the skill enable/disable
+        const toggle = row.querySelector('.skill-toggle');
+        if (toggle) toggle.click();
+        break;
+      case 'Escape':
+        e.preventDefault();
+        // Close any open drawer
+        const drawerOverlay = document.querySelector('.drawer-overlay');
+        if (drawerOverlay) drawerOverlay.click();
+        break;
+    }
+  });
+}
+
+/**
+ * Set up global keyboard shortcuts.
+ * Escape closes any open drawer/overlay.
+ */
+export function setupGlobalKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      // Close any open drawer
+      const drawerOverlay = document.querySelector('.drawer-overlay');
+      if (drawerOverlay) {
+        drawerOverlay.click();
+      }
+    }
+  });
+}
+
+// ─── Lazy Panel Loading ──────────────────────────────────────────
+
+const loadedPanels = new Set();
+
+/**
+ * Lazy-load a panel module. Returns the module's render function.
+ * Caches loaded modules to avoid re-importing.
+ */
+export async function loadPanel(panelName) {
+  if (loadedPanels.has(panelName)) {
+    // Already loaded, just return the module
+    return null;
+  }
+
+  try {
+    const module = await import(`./${panelName}.js`);
+    loadedPanels.add(panelName);
+    return module;
+  } catch (err) {
+    showToast(`Failed to load ${panelName} panel`, 'error');
+    console.error(`Failed to load panel ${panelName}:`, err);
+    return null;
+  }
 }
