@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-04-28T20:30:00.000Z"
+last_updated: "2026-04-28T14:26:00.000Z"
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 20
-  completed_plans: 7
-  percent: 35
+  completed_plans: 8
+  percent: 40
 ---
 
 # Project State: Xentient
@@ -19,7 +19,7 @@ progress:
 See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-19)
 
 **Core value:** The IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room.
-**Current focus:** Phase 7 (Skill Engine Hardening) planned — 5 plans written. Next: Execute 07-01 Gap Fixes.
+**Current focus:** Phase 8 (Web Console + Dashboard) in progress — 08-07 ControlServer refactoring complete. Next: Execute 08-01 REST API Expansion.
 
 ## Active Context
 
@@ -54,6 +54,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 - Platform Track P3/P4 already built as part of Phase 6 (ModeManager + SpaceManager)
 - Roadmap + beads audited and aligned with actual project state
 - Phase 8 added: Web Console + Dashboard — single-page HTML/JS dashboard served by ControlServer (NOT Laravel for v1), 8 plans (08-01 through 08-08)
+- Phase 8 plan 07 complete: ControlServer refactored with MicroRouter route table, ControlServerDeps DI, 64KB body limit, static file fallthrough, SensorHistory ring buffer stub
 
 ## Roadmap Evolution
 
@@ -70,6 +71,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 05 | 02 | 20 min | 2 | 7 |
 | 05 | 03 | 10 min | 2 | 7 |
 | 06 | 01-05 | ~3h | 5 waves | 10+ |
+| 08 | 07 | 31min | 4 | 7 |
 
 ### Quick Tasks Completed
 
