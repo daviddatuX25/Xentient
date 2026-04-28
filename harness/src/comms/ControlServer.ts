@@ -211,6 +211,8 @@ export class ControlServer extends EventEmitter {
         const message = (err as Error).message;
         if (message === "Body too large") {
           this.sendJSON(res, 413, { error: "Request body too large (max 64KB)" });
+        } else if (message === "Invalid JSON") {
+          this.sendJSON(res, 400, { error: "Invalid JSON in request body" });
         } else {
           logger.error({ err, url }, "Handler error");
           this.sendJSON(res, 500, { error: "Internal server error" });
@@ -678,16 +680,21 @@ export class ControlServer extends EventEmitter {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       let totalSize = 0;
+      let exceeded = false;
       req.on("data", (c: Buffer) => {
+        if (exceeded) return; // Already over limit, discard further data
         totalSize += c.length;
         if (totalSize > ControlServer.MAX_BODY_SIZE) {
+          exceeded = true;
+          // Continue consuming data to allow the response to be sent,
+          // but reject the promise so the handler returns 413
           reject(new Error("Body too large"));
-          req.destroy(); // Abort the connection to stop receiving data
           return;
         }
         chunks.push(c);
       });
       req.on("end", () => {
+        if (exceeded) return; // Already rejected
         const body = Buffer.concat(chunks).toString();
         if (!body) { resolve({}); return; }
         try { resolve(JSON.parse(body)); }
