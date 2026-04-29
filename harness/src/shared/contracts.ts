@@ -340,6 +340,60 @@ export const PackSkillManifestSchema = z.object({
   skills: z.array(PackSkillSchema),
 });
 
+// ── API Skill Creation Schema ─────────────────────────────────────────
+
+const SkillTriggerApiSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('cron'), schedule: z.string().min(1) }),
+  z.object({ type: z.literal('interval'), everyMs: z.number().int().min(1) }),
+  z.object({ type: z.literal('mode'), from: z.union([z.enum(MODE_VALUES), z.literal('*')]), to: z.union([z.enum(MODE_VALUES), z.literal('*')]) }),
+  z.object({ type: z.literal('sensor'), sensor: z.enum(['temperature', 'humidity', 'pressure', 'motion']), operator: z.enum(['>', '<', '==', '>=', '<=', '!=']), value: z.number() }),
+  z.object({ type: z.literal('event'), event: z.string().min(1) }),
+  z.object({ type: z.literal('internal'), event: z.string().min(1) }),
+  z.object({ type: z.literal('composite'), all: z.array(z.lazy((): any => SkillTriggerApiSchema)).min(1) }),
+]);
+
+const CoreActionApiSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('set_lcd'), line1: z.string(), line2: z.string() }),
+  z.object({ type: z.literal('play_chime'), preset: z.enum(['morning', 'alert', 'chime']) }),
+  z.object({ type: z.literal('set_mode'), mode: z.enum(MODE_VALUES) }),
+  z.object({ type: z.literal('mqtt_publish'), topic: z.string().min(1), payload: z.record(z.unknown()) }),
+  z.object({ type: z.literal('increment_counter'), name: z.string().min(1) }),
+  z.object({ type: z.literal('log'), message: z.string() }),
+]);
+
+const DataCollectorApiSchema = z.object({
+  type: z.literal('counter'),
+  name: z.string().min(1),
+  resetAfterMs: z.number().int().min(0).optional(),
+});
+
+const EscalationConditionApiSchema = z.object({
+  type: z.literal('counter_above'),
+  name: z.string().min(1),
+  threshold: z.number().int().min(0),
+});
+
+const EscalationConfigApiSchema = z.object({
+  conditions: z.array(EscalationConditionApiSchema).min(1),
+  event: z.string().min(1),
+  contextBuilder: z.enum(['counter_snapshot', 'sensor_snapshot', 'combined']),
+  priority: z.enum(['low', 'normal', 'high', 'critical']),
+});
+
+export const CreateSkillApiSchema = z.object({
+  id: z.string().min(1).max(64),
+  displayName: z.string().min(1).max(64),
+  enabled: z.boolean().optional(),
+  spaceId: z.string().min(1).optional(),
+  trigger: SkillTriggerApiSchema,
+  priority: z.number().int().min(0).max(100).optional(),
+  actions: z.array(CoreActionApiSchema).min(1),
+  collect: z.array(DataCollectorApiSchema).optional(),
+  escalation: EscalationConfigApiSchema.optional(),
+  cooldownMs: z.number().int().min(0).optional(),
+  modeFilter: z.string().optional(),
+});
+
 // ── Pack Management MCP Tool names ──────────────────────────────────
 export const PACK_TOOLS = {
   LOAD_PACK: 'xentient_load_pack',

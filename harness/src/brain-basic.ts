@@ -15,48 +15,81 @@ import pino from "pino";
 
 const logger = pino({ name: "brain-basic" }, process.stderr);
 
+/** Validate required env vars before spawning any child processes. */
+function validateEnv(): void {
+  const missing: string[] = [];
+
+  const sttProvider = process.env.STT_PROVIDER ?? config.stt.provider;
+  if (sttProvider === "deepgram") {
+    if (!process.env.DEEPGRAM_API_KEY) missing.push("DEEPGRAM_API_KEY");
+  } else if (!process.env.OPENAI_API_KEY) {
+    missing.push("OPENAI_API_KEY (required for Whisper STT)");
+  }
+
+  if (!process.env.ELEVENLABS_API_KEY) missing.push("ELEVENLABS_API_KEY");
+
+  if (!process.env.LLM_API_KEY && !process.env.OPENAI_API_KEY) {
+    missing.push("LLM_API_KEY or OPENAI_API_KEY");
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  }
+}
+
 function createSTTProvider(): STTProvider {
   const provider = process.env.STT_PROVIDER ?? config.stt.provider;
   if (provider === "deepgram") {
-    const key = process.env.DEEPGRAM_API_KEY;
-    if (!key) throw new Error("DEEPGRAM_API_KEY not set");
-    return new DeepgramProvider(key);
+    return new DeepgramProvider(process.env.DEEPGRAM_API_KEY!);
   }
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY not set");
-  return new WhisperProvider(key);
+  return new WhisperProvider(process.env.OPENAI_API_KEY!);
 }
 
 function createTTSProvider(): TTSProvider {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key) throw new Error("ELEVENLABS_API_KEY not set");
-  return new ElevenLabsProvider(key, process.env.ELEVENLABS_VOICE_ID ?? config.tts.voiceId);
+  return new ElevenLabsProvider(process.env.ELEVENLABS_API_KEY!, process.env.ELEVENLABS_VOICE_ID ?? config.tts.voiceId);
 }
 
 function createLLMProvider(): LLMProvider {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY not set");
-  return new OpenAIProvider(key, config.llm.model);
+  const key = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY!;
+  const baseURL = process.env.LLM_BASE_URL;
+  return new OpenAIProvider(key, process.env.LLM_MODEL ?? config.llm.model, baseURL);
 }
+
+/** Active MCP client reference — tracked for cleanup on restart. */
+let activeClient: Client | null = null;
 
 async function main() {
   logger.info("Starting Xentient Brain (basic-llm)...");
 
-  // Connect to Core's MCP server via stdio
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [resolve(__dirname, "core.js")],
-  });
+  // Connect to Core's MCP server via stdio.
+  // In dev mode (running via ts-node-dev), __dirname points to src/ — we must
+  // spawn Core via ts-node (not ts-node-dev, to avoid double-respawn loops).
+  // In production (compiled JS), __dirname points to dist/ and we use node.
+  const isDev = !__dirname.includes("dist");
+  const corePath = resolve(__dirname, isDev ? "core.ts" : "core.js");
+  const transport = new StdioClientTransport(
+    isDev
+      ? {
+          command: "npx",
+          args: ["ts-node", "--transpile-only", corePath],
+          env: { ...process.env, FORCE_COLOR: "0" },
+        }
+      : {
+          command: process.execPath,
+          args: [corePath],
+        },
+  );
 
   const client = new Client({ name: "brain-basic", version: "1.0.0" });
   await client.connect(transport);
+  activeClient = client;
   logger.info("Connected to Xentient Core MCP server");
 
   // List available tools
   const { tools } = await client.listTools();
   logger.info({ tools: tools.map((t) => t.name) }, "Available MCP tools");
 
-  // Create providers
+  // Create providers (env vars already validated by supervisedMain)
   const stt = createSTTProvider();
   const tts = createTTSProvider();
   const llm = createLLMProvider();
@@ -80,15 +113,17 @@ async function main() {
 
   const pipeline = new BrainPipeline({ stt, tts, llm, playAudio, getMemoryContext });
 
-  // Subscribe to MCP events using notification handler (Zod schema pattern per RF-9)
-  // The SDK requires Zod schemas for setNotificationHandler, but custom events use
-  // a generic notification schema. We use client.on("notification") as fallback.
-  client.on("notification", (notification: { method?: string; params?: Record<string, unknown> }) => {
+  // Subscribe to MCP events using fallbackNotificationHandler.
+  // Custom xentient events (motion_detected, voice_start, etc.) use method strings
+  // that aren't in the standard MCP spec, so the generic fallback handler catches all
+  // unhandled notifications. This is the correct SDK approach for custom protocols.
+  client.fallbackNotificationHandler = async (notification) => {
     if (!notification.method || !notification.params) return;
+    const params = notification.params as Record<string, unknown>;
 
     switch (notification.method) {
       case "xentient/motion_detected":
-        logger.info({ params: notification.params }, "Motion detected — waking from sleep");
+        logger.info({ params }, "Motion detected — waking from sleep");
         client.callTool({ name: "xentient_set_mode", arguments: { mode: "listen" } }).catch((err: Error) =>
           logger.error({ err }, "Failed to set mode to listen after motion"));
         break;
@@ -100,11 +135,11 @@ async function main() {
         break;
 
       case "xentient/voice_end": {
-        const params = notification.params as { audio?: string; timestamp: number; duration_ms: number };
-        logger.info({ duration_ms: params.duration_ms }, "Voice end — processing utterance");
+        const voiceParams = params as { audio?: string; timestamp: number; duration_ms: number };
+        logger.info({ duration_ms: voiceParams.duration_ms }, "Voice end — processing utterance");
 
-        if (params.audio) {
-          const audioBuffer = Buffer.from(params.audio, "base64");
+        if (voiceParams.audio) {
+          const audioBuffer = Buffer.from(voiceParams.audio, "base64");
           pipeline.processUtterance(audioBuffer).catch((err: Error) =>
             logger.error({ err }, "Pipeline processing error"));
         }
@@ -116,14 +151,14 @@ async function main() {
       }
 
       case "xentient/sensor_update":
-        logger.debug({ params: notification.params }, "Sensor update received");
+        logger.debug({ params }, "Sensor update received");
         break;
 
       case "xentient/mode_changed":
-        logger.info({ params: notification.params }, "Mode changed");
+        logger.info({ params }, "Mode changed");
         break;
     }
-  });
+  };
 
   logger.info("Brain-basic ready — listening for events from Core");
 }
@@ -131,13 +166,44 @@ async function main() {
 // ── Process supervision (GAP-3/T-20) ────────────────────────────
 let restartCount = 0;
 const MAX_RESTARTS = 5;
+const PORT_EXHAUSTION_RE = /ports \d+-\d+ all in use/i;
+
+function isPortExhaustion(err: unknown): boolean {
+  if (err instanceof Error && PORT_EXHAUSTION_RE.test(err.message)) return true;
+  // MCP wraps the core's exit in a connection-closed error — check the stack too
+  if (err instanceof Error && err.stack && PORT_EXHAUSTION_RE.test(err.stack)) return true;
+  return false;
+}
 
 async function supervisedMain() {
+  // Hard exit on missing env vars — retrying won't help if config is absent
+  try {
+    validateEnv();
+  } catch (err) {
+    logger.fatal({ err }, "Required environment variables missing — hard exit");
+    process.exit(1);
+  }
+
   while (restartCount < MAX_RESTARTS) {
     try {
       await main();
       break; // Clean exit
     } catch (err) {
+      // Port exhaustion is a persistent config clash — restarting won't help
+      if (isPortExhaustion(err)) {
+        logger.fatal({ err }, "Core failed to start: all ports in use. Stop other Xentient instances or set WS_PORT/CAMERA_WS_PORT/CONTROL_PORT to free ports.");
+        process.exit(1);
+      }
+
+      // Tear down the MCP client and its child process before restarting
+      if (activeClient) {
+        try {
+          await activeClient.close();
+        } catch {
+          // Ignore cleanup errors during shutdown
+        }
+        activeClient = null;
+      }
       restartCount++;
       const backoff = 2000 * restartCount;
       logger.error({ err, restartCount, backoff }, "Core connection lost, restarting...");
