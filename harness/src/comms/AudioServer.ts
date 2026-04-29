@@ -1,7 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
+import { Server as HttpServer } from 'http';
 import pino from 'pino';
 import { AUDIO_WS_PREFIX, CAMERA_WS_PREFIX } from '../shared/contracts';
+import { listenWithFallback } from './port-fallback';
 
 const logger = pino({ name: 'audio-server' }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
 
@@ -14,16 +16,24 @@ export interface CameraFrameEvent {
 }
 
 export class AudioServer extends EventEmitter {
-  private wss: WebSocketServer;
+  private wss!: WebSocketServer;
+  private httpServer!: HttpServer;
   private activeConnection: WebSocket | null = null;
+  private _port!: number;
 
-  constructor(port: number) {
+  /** Actual port the server is listening on (after potential fallback) */
+  get port(): number { return this._port; }
+
+  constructor(private preferredPort: number) {
     super();
-    this.wss = new WebSocketServer({ port });
+  }
 
-    this.wss.on('listening', () => {
-      logger.info({ port }, 'WebSocket audio server listening');
-    });
+  /** Start the WS server with port auto-fallback */
+  async start(): Promise<void> {
+    this.httpServer = new HttpServer();
+    this._port = await listenWithFallback(this.httpServer, this.preferredPort, 'AudioServer');
+
+    this.wss = new WebSocketServer({ server: this.httpServer });
 
     this.wss.on('connection', (ws, req) => {
       const remoteAddr = req.socket.remoteAddress;
@@ -64,6 +74,8 @@ export class AudioServer extends EventEmitter {
         this.emit('clientDisconnected');
       });
     });
+
+    logger.info({ port: this._port }, 'WebSocket audio server listening');
   }
 
   /** Route binary WS frames by prefix byte */
@@ -140,5 +152,8 @@ export class AudioServer extends EventEmitter {
     }
   }
 
-  close(): void { this.wss.close(); }
+  close(): void {
+    this.wss?.close();
+    this.httpServer?.close();
+  }
 }

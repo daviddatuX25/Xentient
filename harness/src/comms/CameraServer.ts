@@ -1,7 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
+import { Server as HttpServer } from 'http';
 import pino from 'pino';
 import type { CameraFrameEvent } from './AudioServer';
+import { listenWithFallback } from './port-fallback';
 
 const logger = pino({ name: 'camera-server' }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
 
@@ -15,13 +17,15 @@ interface CameraStats {
 }
 
 export class CameraServer extends EventEmitter {
-  private wss: WebSocketServer;
+  private wss!: WebSocketServer;
+  private httpServer!: HttpServer;
   private clients: Set<WebSocket> = new Set();
   private latestJpeg: Buffer | null = null;
   private latestFrameId: number = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private idleTimeoutMs: number;
   private online: boolean = false;
+  private _port!: number;
   private stats: CameraStats = {
     received: 0,
     dropped: 0,
@@ -29,14 +33,20 @@ export class CameraServer extends EventEmitter {
     lastTimestamp: 0,
   };
 
-  constructor(port: number, idleTimeoutMs: number = 10_000) {
+  /** Actual port the server is listening on (after potential fallback) */
+  get port(): number { return this._port; }
+
+  constructor(private preferredPort: number, idleTimeoutMs: number = 10_000) {
     super();
     this.idleTimeoutMs = idleTimeoutMs;
-    this.wss = new WebSocketServer({ port });
+  }
 
-    this.wss.on('listening', () => {
-      logger.info({ port }, 'Camera WebSocket server listening for dashboard clients');
-    });
+  /** Start the WS server with port auto-fallback */
+  async start(): Promise<void> {
+    this.httpServer = new HttpServer();
+    this._port = await listenWithFallback(this.httpServer, this.preferredPort, 'CameraServer');
+
+    this.wss = new WebSocketServer({ server: this.httpServer });
 
     this.wss.on('connection', (ws, req) => {
       const remoteAddr = req.socket.remoteAddress;
@@ -65,6 +75,8 @@ export class CameraServer extends EventEmitter {
         this.clients.delete(ws);
       });
     });
+
+    logger.info({ port: this._port }, 'Camera WebSocket server listening for dashboard clients');
   }
 
   /** Called by AudioServer when a camera frame arrives */
@@ -137,7 +149,8 @@ export class CameraServer extends EventEmitter {
     this.latestJpeg = null;
     this.latestFrameId = 0;
     this.online = false;
-    this.wss.close();
+    this.wss?.close();
+    this.httpServer?.close();
     for (const client of this.clients) {
       client.close();
     }

@@ -10,6 +10,7 @@ import { EventBridge } from "./EventBridge";
 import { PackLoader } from "../engine/PackLoader";
 import { SkillLog } from "../engine/SkillLog";
 import { MicroRouter } from "./MicroRouter";
+import { listenWithFallback } from "./port-fallback";
 import type { CoreSkill, SensorCache } from "../shared/types";
 import { MODE_TRANSITIONS, PERIPHERAL_IDS } from "../shared/contracts";
 import type { EventMapping } from "./EventBridge";
@@ -70,6 +71,9 @@ export class ControlServer extends EventEmitter {
   private port: number;
   private publicDir: string;
   private server: InstanceType<typeof import("http").Server> | null = null;
+
+  /** Actual port the server is listening on (after potential fallback) */
+  get actualPort(): number { return this.port; }
 
   private static MAX_BODY_SIZE = 64 * 1024; // 64KB max request body
 
@@ -146,22 +150,18 @@ export class ControlServer extends EventEmitter {
       .add("GET", "/api/config", this.handleGetConfig.bind(this));
   }
 
-  start(): Promise<void> {
-    return new Promise((resolve) => {
-      this.server = createServer(async (req, res) => {
-        try {
-          await this.handleRequest(req, res);
-        } catch (err) {
-          logger.error({ err, url: req.url }, "Request handler error");
-          this.sendJSON(res, 500, { error: "Internal server error" });
-        }
-      });
-
-      this.server.listen(this.port, () => {
-        logger.info({ port: this.port }, "Control server listening");
-        resolve();
-      });
+  async start(): Promise<void> {
+    this.server = createServer(async (req, res) => {
+      try {
+        await this.handleRequest(req, res);
+      } catch (err) {
+        logger.error({ err, url: req.url }, "Request handler error");
+        this.sendJSON(res, 500, { error: "Internal server error" });
+      }
     });
+
+    this.port = await listenWithFallback(this.server, this.port, 'ControlServer');
+    logger.info({ port: this.port }, "Control server listening");
   }
 
   close(): Promise<void> {

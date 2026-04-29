@@ -59,6 +59,16 @@ async function main() {
   const mqtt = new MqttClient(process.env.MQTT_BROKER_URL ?? config.mqtt.brokerUrl, config.nodeId);
   const audioServer = new AudioServer(config.audio.wsPort);
   const cameraServer = new CameraServer(config.camera.wsPort, config.camera.idleTimeoutMs);
+
+  // Start servers with port auto-fallback
+  try {
+    await audioServer.start();
+    await cameraServer.start();
+  } catch (err) {
+    logger.error({ err }, "Server failed to start — exiting");
+    process.exit(1);
+  }
+
   const stt = createSTTProvider();
   const tts = createTTSProvider();
   const llm = createLLMProvider();
@@ -110,9 +120,14 @@ async function main() {
     getBrainConnected: () => false,  // Basic mode has no brain connection
   };
   const controlServer = new ControlServer(controlServerDeps, controlPort);
-  await controlServer.start();
+  try {
+    await controlServer.start();
+  } catch (err) {
+    logger.error({ err }, "Control server failed to start — exiting");
+    process.exit(1);
+  }
 
-  logger.info({ wsPort: config.audio.wsPort, cameraPort: config.camera.wsPort, controlPort, mqtt: config.mqtt.brokerUrl }, "Core ready — open http://localhost:" + controlPort);
+  logger.info({ wsPort: audioServer.port, cameraPort: cameraServer.port, controlPort: controlServer.actualPort, mqtt: config.mqtt.brokerUrl }, "Core ready — open http://localhost:" + controlServer.actualPort);
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down gracefully...");

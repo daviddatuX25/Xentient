@@ -32,6 +32,16 @@ async function main() {
   );
   const audioServer = new AudioServer(config.audio.wsPort);
   const cameraServer = new CameraServer(config.camera.wsPort, config.camera.idleTimeoutMs);
+
+  // Start servers with port auto-fallback
+  try {
+    await audioServer.start();
+    await cameraServer.start();
+  } catch (err) {
+    logger.error({ err }, "Server failed to start — exiting");
+    process.exit(1);
+  }
+
   const modeManager = new ModeManager(mqtt);
 
   // Sensor cache for MCP tools
@@ -117,15 +127,14 @@ async function main() {
       if (totalBytes > MAX_AUDIO_BYTES) {
         logger.warn({ totalBytes, maxBytes: MAX_AUDIO_BYTES }, "AudioAccumulator cap reached - flushing early");
         const combined = Buffer.concat(audioChunks);
-        // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-        mcpServer.notification({
+        mcpServer.server.notification({
           method: MCP_EVENTS.voice_end,
           params: {
             timestamp: Date.now(),
             duration_ms: combined.length / 32,
             audio: combined.toString("base64"),
           },
-        }).catch((err: Error) => logger.error({ err }, "Failed to send voice_end event (cap flush)"));
+        } as any).catch((err: Error) => logger.error({ err }, "Failed to send voice_end event (cap flush)"));
         audioChunks = [];
         isAccumulating = false;
       }
@@ -137,15 +146,14 @@ async function main() {
     const d = data as { source?: string; stage?: string };
     if (d.source === "voice" && d.stage === "end" && isAccumulating) {
       const combined = Buffer.concat(audioChunks);
-      // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-      mcpServer.notification({
+      mcpServer.server.notification({
         method: MCP_EVENTS.voice_end,
         params: {
           timestamp: Date.now(),
           duration_ms: combined.length / 32,
           audio: combined.toString("base64"),
         },
-      }).catch((err: Error) => logger.error({ err }, "Failed to send voice_end event"));
+      } as any).catch((err: Error) => logger.error({ err }, "Failed to send voice_end event"));
       audioChunks = [];
       isAccumulating = false;
     }
@@ -329,11 +337,16 @@ async function main() {
     }, 1000);
   }
 
-  await controlServer.start();
+  try {
+    await controlServer.start();
+  } catch (err) {
+    logger.error({ err }, "Control server failed to start — exiting");
+    process.exit(1);
+  }
 
   logger.info(
-    { wsPort: config.audio.wsPort, cameraPort: config.camera.wsPort, controlPort, mqtt: config.mqtt.brokerUrl },
-    "Core ready - open http://localhost:" + controlPort,
+    { wsPort: audioServer.port, cameraPort: cameraServer.port, controlPort: controlServer.actualPort, mqtt: config.mqtt.brokerUrl },
+    "Core ready - open http://localhost:" + controlServer.actualPort,
   );
 
   const shutdown = async (signal: string) => {
