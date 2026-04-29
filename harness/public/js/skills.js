@@ -10,20 +10,44 @@ import { showToast, handleQuickAction } from './components.js';
 // ─── Trigger type field definitions ──────────────────────────────────
 
 const TRIGGER_FIELDS = {
-  event:     [{ key: 'eventName', label: 'Event Name', type: 'text' }],
-  interval:  [{ key: 'intervalMs', label: 'Interval (ms)', type: 'number' }],
+  event:     [{ key: 'event', label: 'Event Name', type: 'text' }],
+  interval:  [{ key: 'everyMs', label: 'Interval (ms)', type: 'number' }],
   sensor: [
-    { key: 'sensorKey', label: 'Sensor', type: 'select', options: ['temperature', 'humidity', 'pressure', 'motion'] },
+    { key: 'sensor', label: 'Sensor', type: 'select', options: ['temperature', 'humidity', 'pressure', 'motion'] },
     { key: 'operator', label: 'Operator', type: 'select', options: ['>', '<', '>=', '<=', '==', '!='] },
     { key: 'value', label: 'Threshold', type: 'number' },
   ],
   mode: [
-    { key: 'fromMode', label: 'From Mode', type: 'select-mode' },
-    { key: 'toMode', label: 'To Mode', type: 'select-mode' },
+    { key: 'from', label: 'From Mode', type: 'select-mode-wildcard' },
+    { key: 'to', label: 'To Mode', type: 'select-mode-wildcard' },
   ],
   cron:      [{ key: 'schedule', label: 'Cron Schedule', type: 'text', placeholder: '0 * * * *' }],
-  internal:  [{ key: 'eventName', label: 'Event Name', type: 'text' }],
+  internal:  [{ key: 'event', label: 'Event Name', type: 'text' }],
   composite: [],
+};
+
+const ACTION_FIELDS = {
+  log:               [{ key: 'message', label: 'Message', type: 'text', placeholder: 'skill-fired' }],
+  set_mode:          [{ key: 'mode', label: 'Mode', type: 'select-mode' }],
+  play_chime:        [{ key: 'preset', label: 'Preset', type: 'select', options: ['morning', 'alert', 'chime'] }],
+  set_lcd:           [
+    { key: 'line1', label: 'Line 1', type: 'text', placeholder: 'Hello' },
+    { key: 'line2', label: 'Line 2', type: 'text', placeholder: 'World' },
+  ],
+  mqtt_publish:      [
+    { key: 'topic', label: 'Topic', type: 'text', placeholder: 'xentient/action' },
+    { key: 'payload', label: 'Payload (JSON)', type: 'text', placeholder: '{"key":"value"}' },
+  ],
+  increment_counter: [{ key: 'name', label: 'Counter Name', type: 'text', placeholder: 'myCounter' }],
+};
+
+const ACTION_TYPE_LABELS = {
+  log: 'Log',
+  set_mode: 'Set Mode',
+  play_chime: 'Play Chime',
+  set_lcd: 'LCD Display',
+  mqtt_publish: 'MQTT Publish',
+  increment_counter: 'Increment Counter',
 };
 
 const AVAILABLE_MODES = ['sleep', 'listen', 'active', 'record'];
@@ -41,6 +65,7 @@ export class SkillManagerPanel {
     this.drawerOpen = false;
     this.advancedMode = false;
     this.formTriggerType = '';
+    this.formActions = [{ type: 'log' }];
     this.formErrors = {};
     this.packs = null;
     this.eventMappings = [];
@@ -371,6 +396,7 @@ export class SkillManagerPanel {
   clearForm() {
     this.formErrors = {};
     this.formTriggerType = '';
+    this.formActions = [{ type: 'log' }];
     const form = document.getElementById('register-skill-form');
     if (form) form.reset();
     const jsonArea = document.getElementById('skill-json-input');
@@ -644,6 +670,11 @@ export class SkillManagerPanel {
         <div id="trigger-dynamic-fields" class="form-row">
           ${this.renderTriggerFields(this.formTriggerType)}
         </div>
+        <div class="form-section-label">Actions</div>
+        <div id="action-rows">
+          ${this.formActions.map((a, i) => this.renderActionRow(i, a.type)).join('')}
+        </div>
+        <button type="button" class="action-btn btn-secondary" data-action="add-action-row">+ Add Action</button>
         <div class="form-actions">
           <button type="submit" class="action-btn">Register Skill</button>
         </div>
@@ -674,6 +705,14 @@ export class SkillManagerPanel {
             ${AVAILABLE_MODES.map(m => `<option value="${m}">${m}</option>`).join('')}
           </select>
         </div>`;
+      } else if (f.type === 'select-mode-wildcard') {
+        return `<div class="form-group">
+          <label class="form-label">${f.label}</label>
+          <select class="form-select" data-form-field="trigger_${f.key}" data-trigger-field="${f.key}">
+            <option value="*">*</option>
+            ${AVAILABLE_MODES.map(m => `<option value="${m}">${m}</option>`).join('')}
+          </select>
+        </div>`;
       } else {
         return `<div class="form-group">
           <label class="form-label">${f.label}</label>
@@ -683,13 +722,55 @@ export class SkillManagerPanel {
     }).join('');
   }
 
+  // ── Action Row Rendering ─────────────────────────────────────────
+
+  renderActionRow(idx, actionType) {
+    const fields = ACTION_FIELDS[actionType] || [];
+    const canRemove = this.formActions.length > 1;
+
+    return `<div class="form-row action-row" data-action-idx="${idx}">
+      <div class="form-group" style="min-width:140px">
+        <label class="form-label">Action ${idx + 1}</label>
+        <select class="form-select" data-action="change-action-type" data-action-idx="${idx}">
+          ${Object.entries(ACTION_TYPE_LABELS).map(([k, v]) =>
+            `<option value="${k}" ${k === actionType ? 'selected' : ''}>${v}</option>`
+          ).join('')}
+        </select>
+      </div>
+      ${fields.map(f => {
+        if (f.type === 'select') {
+          return `<div class="form-group">
+            <label class="form-label">${f.label}</label>
+            <select class="form-select" data-form-field="action_${idx}_${f.key}" data-action-idx="${idx}" data-action-field="${f.key}">
+              ${f.options.map(o => `<option value="${o}">${o}</option>`).join('')}
+            </select>
+          </div>`;
+        } else if (f.type === 'select-mode') {
+          return `<div class="form-group">
+            <label class="form-label">${f.label}</label>
+            <select class="form-select" data-form-field="action_${idx}_${f.key}" data-action-idx="${idx}" data-action-field="${f.key}">
+              ${AVAILABLE_MODES.map(m => `<option value="${m}">${m}</option>`).join('')}
+            </select>
+          </div>`;
+        } else {
+          return `<div class="form-group">
+            <label class="form-label">${f.label}</label>
+            <input type="${f.type}" class="form-input ${f.type === 'number' ? 'text-mono' : ''}" data-form-field="action_${idx}_${f.key}" data-action-idx="${idx}" data-action-field="${f.key}" placeholder="${f.placeholder || ''}">
+          </div>`;
+        }
+      }).join('')}
+      ${canRemove ? `<div class="form-group" style="align-self:flex-end"><button type="button" class="action-btn btn-danger-sm" data-action="remove-action-row" data-action-idx="${idx}">Remove</button></div>` : ''}
+    </div>`;
+  }
+
   // ── Advanced Form ────────────────────────────────────────────────
 
   renderAdvancedForm() {
     const template = JSON.stringify({
       id: 'my_skill',
       displayName: 'My Skill',
-      trigger: { type: 'event', eventName: '' },
+      trigger: { type: 'event', event: '' },
+      actions: [{ type: 'log', message: 'skill-fired' }],
       priority: 50,
       enabled: true,
       spaceId: '*',
@@ -767,6 +848,33 @@ export class SkillManagerPanel {
       });
     });
 
+    // Action type change
+    container.querySelectorAll('[data-action="change-action-type"]').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.dataset.actionIdx, 10);
+        this.formActions[idx] = { type: e.target.value };
+        this.render(container);
+      });
+    });
+
+    // Add action row
+    const addActBtn = container.querySelector('[data-action="add-action-row"]');
+    if (addActBtn) {
+      addActBtn.addEventListener('click', () => {
+        this.formActions.push({ type: 'log' });
+        this.render(container);
+      });
+    }
+
+    // Remove action row
+    container.querySelectorAll('[data-action="remove-action-row"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.actionIdx, 10);
+        this.formActions.splice(idx, 1);
+        this.render(container);
+      });
+    });
+
     // Advanced register
     const advBtn = container.querySelector('[data-action="register-advanced"]');
     if (advBtn) {
@@ -836,10 +944,32 @@ export class SkillManagerPanel {
       }
     }
 
+    // Build actions array
+    const actions = [];
+    for (let i = 0; i < this.formActions.length; i++) {
+      const actionType = this.formActions[i].type;
+      const action = { type: actionType };
+      const fields = ACTION_FIELDS[actionType] || [];
+      for (const f of fields) {
+        const val = getVal(`action_${i}_${f.key}`);
+        if (val !== '') {
+          if (f.type === 'number') {
+            action[f.key] = parseFloat(val);
+          } else if (f.key === 'payload') {
+            try { action[f.key] = JSON.parse(val); } catch { action[f.key] = val; }
+          } else {
+            action[f.key] = val;
+          }
+        }
+      }
+      actions.push(action);
+    }
+
     const formData = {
       id,
       displayName: displayName || id,
       trigger,
+      actions,
       priority,
       enabled: true,
       spaceId: '*',
@@ -872,21 +1002,22 @@ function validateSkillForm(formData) {
   if (!formData.id?.trim()) errors.id = 'Skill ID is required';
   if (!formData.displayName?.trim()) errors.displayName = 'Display name is required';
   if (!formData.trigger?.type) errors.triggerType = 'Trigger type is required';
+  if (!formData.actions?.length) errors.actions = 'At least one action is required';
 
   const triggerType = formData.trigger?.type;
-  if (triggerType === 'event' && !formData.trigger?.eventName) {
-    errors.trigger_eventName = 'Event name is required for event triggers';
+  if (triggerType === 'event' && !formData.trigger?.event) {
+    errors.trigger_event = 'Event name is required for event triggers';
   }
-  if (triggerType === 'interval' && !formData.trigger?.intervalMs) {
-    errors.trigger_intervalMs = 'Interval is required for interval triggers';
+  if (triggerType === 'interval' && !formData.trigger?.everyMs) {
+    errors.trigger_everyMs = 'Interval is required for interval triggers';
   }
   if (triggerType === 'sensor') {
-    if (!formData.trigger?.sensorKey) errors.trigger_sensorKey = 'Sensor key is required';
+    if (!formData.trigger?.sensor) errors.trigger_sensor = 'Sensor key is required';
     if (formData.trigger?.value === undefined || formData.trigger?.value === '') errors.trigger_value = 'Threshold value is required';
   }
   if (triggerType === 'mode') {
-    if (!formData.trigger?.fromMode) errors.trigger_fromMode = 'From mode is required';
-    if (!formData.trigger?.toMode) errors.trigger_toMode = 'To mode is required';
+    if (!formData.trigger?.from) errors.trigger_from = 'From mode is required';
+    if (!formData.trigger?.to) errors.trigger_to = 'To mode is required';
   }
   if (triggerType === 'cron' && !formData.trigger?.schedule) {
     errors.trigger_schedule = 'Cron schedule is required';

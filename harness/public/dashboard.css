@@ -1103,6 +1103,42 @@ h1, h2, h3, h4, h5, h6 {
 .form-actions {
   display: flex;
   gap: 8px;
+  margin-top: 12px;
+}
+
+.form-section-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 16px 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.action-row {
+  padding: 8px;
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  margin-bottom: 8px;
+}
+
+.btn-secondary {
+  font-family: var(--font-ui);
+  font-weight: var(--weight);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .form-mode-toggle {
