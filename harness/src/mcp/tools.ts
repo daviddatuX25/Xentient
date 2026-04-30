@@ -544,10 +544,11 @@ export function createToolHandlers(deps: McpToolDeps) {
       const r = role ?? 'base';
       const hw = hardware ?? ['motion', 'temperature', 'humidity', 'audio', 'camera'];
       const token = deps.nodeProvisioner.generateToken(sid, r, hw, wifiSsid, wifiPass);
+      const safeToken = deps.nodeProvisioner.sanitizeToken(token);
       return {
         content: [{
           type: 'text' as const,
-          text: `Node registered. Paste this JSON into your Xentient-Setup portal:\n\n${JSON.stringify(token, null, 2)}`,
+          text: `Node registered. Paste this JSON into your Xentient-Setup portal:\n\n${JSON.stringify(safeToken, null, 2)}`,
         }],
       };
     },

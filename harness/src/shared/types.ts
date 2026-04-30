@@ -65,6 +65,9 @@ export interface ProvisioningToken {
   wifiPass?: string;   // optional: pre-fill WiFi password if known
 }
 
+/** Public-facing token for API/MCP responses — wifiPass is intentionally excluded. */
+export type ProvisioningTokenPublic = Omit<ProvisioningToken, 'wifiPass'>;
+
 /**
  * Contract that SpaceManager must satisfy for the provisioning flow.
  * Task 4 will add these methods to SpaceManager directly.

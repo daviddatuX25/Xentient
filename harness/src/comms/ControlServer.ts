@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { readFile, stat, readdir } from "fs/promises";
-import { join, extname } from "path";
+import { join, extname, resolve } from "path";
 import { EventEmitter } from "events";
 import { MqttClient } from "./MqttClient";
 import { CameraServer } from "./CameraServer";
@@ -649,17 +649,22 @@ export class ControlServer extends EventEmitter {
       wifiSsid,
       wifiPass,
     );
-    this.sendJSON(res, 200, { token, json: JSON.stringify(token, null, 2) });
+    const safeToken = this.deps.nodeProvisioner.sanitizeToken(token);
+    this.sendJSON(res, 200, { token: safeToken, json: JSON.stringify(safeToken, null, 2) });
   }
 
   // ── Static File Serving ─────────────────────────────────────────────
 
   private async serveStatic(_req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = _req.url ?? "/";
-    let filePath = url === "/" ? "/index.html" : url;
-    // Security: prevent directory traversal
-    filePath = filePath.replace(/\.\./g, "");
-    const fullPath = join(this.publicDir, filePath);
+    const filePath = url === "/" ? "/index.html" : url;
+    const fullPath = resolve(this.publicDir, filePath);
+
+    // Security: reject paths outside publicDir (handles .., URL encoding, etc.)
+    if (!fullPath.startsWith(this.publicDir)) {
+      this.sendJSON(res, 403, { error: "Forbidden" });
+      return;
+    }
 
     try {
       const data = await readFile(fullPath);

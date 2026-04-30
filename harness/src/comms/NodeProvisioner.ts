@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 import pino from 'pino';
-import type { ProvisioningToken, ProvisioningManager, SpaceNode } from '../shared/types';
+import type { ProvisioningToken, ProvisioningTokenPublic, ProvisioningManager, SpaceNode } from '../shared/types';
 
 const log = pino({ name: 'node-provisioner' }, process.stderr);
 
@@ -81,11 +81,17 @@ export class NodeProvisioner extends EventEmitter {
     return this.spaceManager.updateNodeStatus(spaceId, nodeId, 'active');
   }
 
+  /** Return a sanitized copy of the token for API/MCP responses — strips wifiPass */
+  sanitizeToken(token: ProvisioningToken): ProvisioningTokenPublic {
+    const { wifiPass: _, ...safe } = token;
+    return safe;
+  }
+
   /**
    * Clean up tokens older than TTL (default 1 hour).
    * Call periodically or on startup to prevent stale pending entries.
    */
-  cleanupStale(ttlMs: number = 3600000): number {
+  cleanupStale(ttlMs: number = 900000): number {
     const now = Date.now();
     let cleaned = 0;
     for (const [nodeId, entry] of this.pendingTokens.entries()) {
