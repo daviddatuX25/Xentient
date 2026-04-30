@@ -247,7 +247,7 @@ export class SpaceManager extends EventEmitter {
           if (profile) {
             this.mqttClient.publish(
               `xentient/node/${node.nodeId}/profile/set`,
-              JSON.stringify({ v: 1, type: 'node_profile_set', ...profile }),
+              { v: 1, type: 'node_profile_set', ...profile },
             );
             node.state = 'running';
           } else {
@@ -291,7 +291,7 @@ export class SpaceManager extends EventEmitter {
   private pushDefaultProfile(node: { nodeId: string }): void {
     this.mqttClient.publish(
       `xentient/node/${node.nodeId}/profile/set`,
-      JSON.stringify({ v: 1, type: 'node_profile_set', ...DEFAULT_NODE_PROFILE }),
+      { v: 1, type: 'node_profile_set', ...DEFAULT_NODE_PROFILE },
     );
     logger.info({ nodeId: node.nodeId }, 'Default NodeProfile pushed');
   }
@@ -346,6 +346,11 @@ export class SpaceManager extends EventEmitter {
     for (const [, ex] of this.executors) {
       ex.resolveConflict(resolution);
     }
+  }
+
+  /** Close an escalation (called by brain stream on escalation_complete) */
+  closeEscalation(escalationId: string): void {
+    logger.info({ escalationId }, "Escalation closed (brain stream)");
   }
 
   /** Forward MQTT/MCP events to relevant executors */

@@ -4,16 +4,17 @@ import pino from 'pino';
 import { z } from 'zod';
 import { EventEmitter } from 'events';
 import { PackSkillManifestSchema } from '../shared/contracts';
-import type { CoreSkill, SkillTrigger, CoreAction, PackSkillManifest } from '../shared/types';
+import type { CoreSkill, SkillTrigger, CoreAction } from '../shared/types';
 
-type ParsedPackSkill = z.infer<typeof PackSkillManifestSchema>['skills'][number];
+type ParsedManifest = z.infer<typeof PackSkillManifestSchema>;
+type ParsedPackSkill = ParsedManifest['skills'][number];
 
 const logger = pino({ name: 'pack-loader' }, process.stderr);
 
 export class PackLoader extends EventEmitter {
   private loadedPack: string | null = null;
   private loadedSkillIds: string[] = [];
-  private cachedManifest: PackSkillManifest | null = null;
+  private cachedManifest: ParsedManifest | null = null;
 
   constructor(
     private packsDir: string,
@@ -70,7 +71,7 @@ export class PackLoader extends EventEmitter {
   }
 
   /** Return the parsed manifest of the currently loaded pack, or null. */
-  getLoadedPackManifest(): PackSkillManifest | null {
+  getLoadedPackManifest(): ParsedManifest | null {
     return this.cachedManifest;
   }
 

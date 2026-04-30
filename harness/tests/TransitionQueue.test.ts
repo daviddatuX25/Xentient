@@ -5,7 +5,7 @@ describe('TransitionQueue', () => {
   it('enqueues and drains actions in FIFO order', () => {
     const q = new TransitionQueue();
     q.enqueue({ type: 'activate_config', configName: 'student', spaceId: 'default' });
-    q.enqueue({ type: 'set_node_state', nodeId: 'node-01', state: 'running' });
+    q.enqueue({ type: 'set_node_state', nodeId: 'node-01', state: 'running', spaceId: 'default' });
 
     expect(q.pending).toBe(2);
 
@@ -13,7 +13,7 @@ describe('TransitionQueue', () => {
     expect(first).toEqual({ type: 'activate_config', configName: 'student', spaceId: 'default' });
 
     const second = q.drain();
-    expect(second).toEqual({ type: 'set_node_state', nodeId: 'node-01', state: 'running' });
+    expect(second).toEqual({ type: 'set_node_state', nodeId: 'node-01', state: 'running', spaceId: 'default' });
 
     expect(q.pending).toBe(0);
   });

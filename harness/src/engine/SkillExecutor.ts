@@ -8,7 +8,7 @@ import {
   SkillFireEvent, SkillEscalationEvent, SkillConflictEvent,
   ConflictResolution, PendingConflict, ObservabilityEvent,
 } from '../shared/types';
-import { SKILL_EVENTS, BUILTIN_SKILL_IDS, CONFLICT_TIMEOUT_MS } from '../shared/contracts';
+import { SKILL_EVENTS, BUILTIN_SKILL_IDS, CONFLICT_TIMEOUT_MS, Mode } from '../shared/contracts';
 import { ModeManager } from './ModeManager';
 import { MqttClient } from '../comms/MqttClient';
 import { SkillLog } from './SkillLog';
@@ -183,7 +183,8 @@ export class SkillExecutor extends EventEmitter {
     logger.info({ resolution }, 'Conflict resolved by Brain');
   }
 
-  private tick(): void {
+  /** Execute one evaluation cycle. Called by SpaceManager.tick() or manually for testing. */
+  tick(): void {
     const sensors = this.opts.getSensorSnapshot();
     const ctx = { mode: this.opts.modeManager.getMode(), sensors, now: Date.now() };
 
@@ -332,7 +333,7 @@ export class SkillExecutor extends EventEmitter {
   private runAction(action: CoreAction, _triggerData: Record<string, unknown>): void {
     switch (action.type) {
       case 'set_mode':
-        this.opts.modeManager.transition(action.mode);
+        this.opts.modeManager.transition(action.mode as Mode);
         break;
       case 'set_lcd':
         this.emit('lcd', { line1: action.line1, line2: action.line2 });

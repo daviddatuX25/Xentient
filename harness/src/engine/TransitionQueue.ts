@@ -2,7 +2,7 @@ import type { CoreNodeState, CoreSkill } from '../shared/types';
 
 export type TransitionAction =
   | { type: 'activate_config'; configName: string; spaceId: string }
-  | { type: 'set_node_state'; nodeId: string; state: CoreNodeState }
+  | { type: 'set_node_state'; nodeId: string; state: CoreNodeState; spaceId: string }
   | { type: 'register_skill'; skill: CoreSkill; spaceId: string }
   | { type: 'remove_skill'; skillId: string; spaceId: string };
 

@@ -53,6 +53,7 @@ export interface SpaceNode {
 
 // ---- NodeSkill ----
 
+/** @deprecated NodeSkill.emits now uses string[] — kept for reference only */
 export type NodeEventType = 'presence' | 'motion' | 'env' | 'audio_chunk' | 'vad' | 'frame';
 
 export interface NodeSkill {
@@ -75,7 +76,7 @@ export interface NodeSkill {
     cameraMode?: number;   // 0=off, 1=on-motion, 2=stream
     vadThreshold?: number;
   };
-  emits: NodeEventType[];
+  emits: string[];
   expectedBy: string;        // paired CoreSkill
   compatibleConfigs: string[];
   modeTask?: {
@@ -303,4 +304,23 @@ export interface PackSkill {
   cooldownMs?: number;
   escalation?: EscalationConfig;
   collect?: DataCollector[];
+}
+
+// ---- Brain Stream Events (Sprint 6) ----
+
+export type BrainStreamSubtype =
+  | 'escalation_received'
+  | 'reasoning_token'
+  | 'tool_call_fired'
+  | 'tool_call_result'
+  | 'tts_queued'
+  | 'escalation_complete';
+
+export interface BrainStreamEvent {
+  type: 'brain_event';
+  source: 'brain';
+  escalation_id: string;
+  subtype: BrainStreamSubtype;
+  payload: Record<string, unknown>;
+  timestamp: number;
 }
