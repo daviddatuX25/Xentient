@@ -360,6 +360,16 @@ void setup() {
     // WiFi is now connected (WiFiManager guaranteed this or we restarted)
     Serial.printf("[WIFI] Connected. IP: %s\n", WiFi.localIP().toString().c_str());
 
+    // Validate config completeness
+    if (cfg.mqttHost[0] == '\0' || cfg.nodeId[0] == '\0') {
+        Serial.println("[BOOT] Incomplete config — mqttHost or nodeId missing, restarting portal");
+        provisioning_clear();
+        lcd_display_face("(?_?)", "bad config");
+        delay(2000);
+        esp_sleep_enable_timer_wakeup(10 * 1000000); // 10s
+        esp_deep_sleep_start();
+    }
+
     // Register WiFi event handler for MQTT reconnect on WiFi reconnect (8.6)
     WiFi.onEvent(wifi_event_cb);
 
