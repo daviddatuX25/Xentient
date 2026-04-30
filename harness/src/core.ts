@@ -18,6 +18,7 @@ import { MotionHistory } from "./engine/MotionHistory";
 import { ModeHistory } from "./engine/ModeHistory";
 import { startMcpServer } from "./mcp/server";
 import { EventSubscriptionManager } from "./engine/EventSubscriptionManager";
+import { NodeProvisioner } from "./comms/NodeProvisioner";
 import type { SensorCache, Space } from "./shared/types";
 import { MCP_EVENTS, PROTOCOL_VERSION, PERIPHERAL_IDS } from "./shared/contracts";
 import pino from "pino";
@@ -69,7 +70,7 @@ async function main() {
   // Start MCP server (stdio transport - brain processes connect here)
   // Mutable ref pattern: create deps object first, pass to startMcpServer,
   // then assign spaceManager after both mcpServer and spaceManager exist.
-  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge; packLoader?: PackLoader; controlServer?: ControlServer; eventSubscriptionManager?: EventSubscriptionManager } = {
+  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge; packLoader?: PackLoader; controlServer?: ControlServer; eventSubscriptionManager?: EventSubscriptionManager; nodeProvisioner?: NodeProvisioner } = {
     mqtt,
     audio: audioServer,
     camera: cameraServer,
@@ -92,14 +93,26 @@ async function main() {
   // Wire spaceManager into MCP deps (createToolHandlers captures deps by reference)
   mcpDeps.spaceManager = spaceManager;
 
+  // --- NodeProvisioner: dynamic node registration (S5, S9, S11) ---
+  const nodeProvisioner = new NodeProvisioner(
+    () => ({ host: config.mqtt.brokerUrl.replace(/^[a-z]+:\/\//, '').split(':')[0] ?? 'localhost', port: 1883 }),
+    () => ({ host: config.mqtt.brokerUrl.replace(/^[a-z]+:\/\//, '').split(':')[0] ?? 'localhost', port: parseInt(process.env.WS_PORT ?? String(config.audio.wsPort), 10) }),
+    spaceManager,
+  );
+  mcpDeps.nodeProvisioner = nodeProvisioner;
+
   // Wire MQTT reconnect → profile replay + node_profile_ack handling
   mqtt.on('reconnect', () => spaceManager.onMqttReconnect());
   mqtt.on('nodeProfileAck', (data: { nodeId: string; status: 'loaded' | 'error' }) => {
     spaceManager.onNodeProfileAck(data.nodeId, data.status);
   });
   mqtt.on('nodeBirth', (data: { nodeId: string }) => {
+    nodeProvisioner.confirmNode(data.nodeId);
     spaceManager.onNodeBirth(data.nodeId);
   });
+
+  // Stale provisioning token cleanup (every 5 minutes)
+  setInterval(() => nodeProvisioner.cleanupStale(), 300000);
 
   // --- EventSubscriptionManager: Sprint 4 event subscription system ---
   const eventSubManager = new EventSubscriptionManager((subscriptionId: string, events: unknown[]) => {
@@ -267,6 +280,7 @@ async function main() {
       packLoader,
       skillLog: spaceManager.skillLog,
       getBrainConnected: () => true, // v1: stdio transport always connected
+      nodeProvisioner,
     },
     controlPort,
   );

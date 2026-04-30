@@ -312,6 +312,24 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
   );
 
   // ============================================================
+  // NODE PROVISIONING TOOLS — Sprint 9 (S5, S9, S11)
+  // ============================================================
+
+  server.tool(
+    'xentient_register_node',
+    'Register a new node and generate a provisioning token for ESP32 WiFiManager portal',
+    {
+      spaceId: z.string().optional().default('default').describe('Space ID to register the node in'),
+      role: z.string().optional().default('base').describe('Node role (e.g. base, ceiling, door)'),
+      hardware: z.array(z.string()).optional().default(['motion', 'temperature', 'humidity', 'audio', 'camera']).describe('Hardware capabilities'),
+      wifiSsid: z.string().optional().describe('WiFi SSID to pre-fill in provisioning portal'),
+      wifiPass: z.string().optional().describe('WiFi password to pre-fill in provisioning portal'),
+    } as any,
+    ({ spaceId, role, hardware, wifiSsid, wifiPass }: { spaceId?: string; role?: string; hardware?: string[]; wifiSsid?: string; wifiPass?: string }) =>
+      handlers.xentient_register_node({ spaceId, role, hardware, wifiSsid, wifiPass }),
+  );
+
+  // ============================================================
   // CAPABILITY DISCOVERY TOOLS — Sprint 3
   // ============================================================
 

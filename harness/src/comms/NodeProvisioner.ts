@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import pino from 'pino';
 import type { ProvisioningToken, ProvisioningManager, SpaceNode } from '../shared/types';
 
-const log = pino({ name: 'node-provisioner' });
+const log = pino({ name: 'node-provisioner' }, process.stderr);
 
 export class NodeProvisioner extends EventEmitter {
   private pendingTokens = new Map<string, { token: ProvisioningToken; role: string; hardware: string[]; createdAt: number }>();
@@ -21,7 +21,7 @@ export class NodeProvisioner extends EventEmitter {
    * This prevents orphan tokens — if the user closes the browser, the nodeId is already tracked.
    * The node starts in status "pending" and transitions to "active" on first MQTT connect.
    */
-  generateToken(spaceId: string, role: string, hardware: string[], wifiSsid?: string): ProvisioningToken {
+  generateToken(spaceId: string, role: string, hardware: string[], wifiSsid?: string, wifiPass?: string): ProvisioningToken {
     const mqtt = this.getMqttBroker();
     const ws = this.getWsHost();
     if (!mqtt?.host || !mqtt?.port) {
@@ -31,7 +31,7 @@ export class NodeProvisioner extends EventEmitter {
       throw new Error('WebSocket host not configured — cannot generate provisioning token');
     }
 
-    const nodeId = `node_${randomUUID().slice(0, 12)}`;
+    const nodeId = `node_${randomUUID().slice(0, 8)}`;
     const token: ProvisioningToken = {
       nodeId,
       spaceId,
@@ -40,6 +40,7 @@ export class NodeProvisioner extends EventEmitter {
       wsHost: ws.host,
       wsPort: ws.port,
       wifiSsid,
+      wifiPass,
     };
 
     // Register node immediately — no orphan tokens (G5 fix)
@@ -49,6 +50,7 @@ export class NodeProvisioner extends EventEmitter {
       hardware,
       state: 'dormant',
       status: 'pending',
+      lastSeen: Date.now(),
     };
     this.spaceManager.registerNode(spaceId, node);
 

@@ -9,6 +9,7 @@ import type { SpaceManager } from "../engine/SpaceManager";
 import type { PackLoader } from "../engine/PackLoader";
 import type { EventSubscriptionManager } from "../engine/EventSubscriptionManager";
 import type { SensorCache, CoreSkill, BrainStreamEvent, BrainStreamSubtype, Configuration } from "../shared/types"; // RF-5: moved from here to shared to avoid comms↔mcp circular dep
+import type { NodeProvisioner } from "../comms/NodeProvisioner";
 import { type Mode, EVENT_MASK_BITS } from "../shared/contracts";
 import pino from "pino";
 
@@ -25,6 +26,7 @@ export interface McpToolDeps {
   packLoader?: PackLoader; // PACK TOOLS: wired in core.ts
   controlServer?: ControlServer; // BRAIN STREAM: wired in core.ts
   eventSubscriptionManager?: EventSubscriptionManager; // EVENT SUBSCRIPTION: Sprint 4
+  nodeProvisioner?: NodeProvisioner; // NODE PROVISIONING: Sprint 9
 }
 
 // NOTE: SensorCache interface is defined in src/shared/types.ts (Task 0.5) — do NOT redefine here
@@ -527,6 +529,27 @@ export function createToolHandlers(deps: McpToolDeps) {
       if (!deps.eventSubscriptionManager) return { content: [{ type: 'text' as const, text: 'EventSubscriptionManager not initialized' }], isError: true as const };
       const removed = deps.eventSubscriptionManager.unsubscribe(subscriptionId);
       return { content: [{ type: 'text' as const, text: JSON.stringify({ removed }) }] };
+    },
+
+    // ============================================================
+    // NODE PROVISIONING TOOL — Sprint 9 (S5, S9, S11)
+    // Generate provisioning tokens for ESP32 WiFiManager portal
+    // ============================================================
+
+    xentient_register_node: async ({ spaceId, role, hardware, wifiSsid, wifiPass }: {
+      spaceId?: string; role?: string; hardware?: string[]; wifiSsid?: string; wifiPass?: string;
+    }) => {
+      if (!deps.nodeProvisioner) return { content: [{ type: 'text' as const, text: 'NodeProvisioner not available' }], isError: true as const };
+      const sid = spaceId ?? 'default';
+      const r = role ?? 'base';
+      const hw = hardware ?? ['motion', 'temperature', 'humidity', 'audio', 'camera'];
+      const token = deps.nodeProvisioner.generateToken(sid, r, hw, wifiSsid, wifiPass);
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Node registered. Paste this JSON into your Xentient-Setup portal:\n\n${JSON.stringify(token, null, 2)}`,
+        }],
+      };
     },
   };
 }

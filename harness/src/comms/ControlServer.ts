@@ -12,6 +12,7 @@ import { SkillLog } from "../engine/SkillLog";
 import { MicroRouter } from "./MicroRouter";
 import { listenWithFallback } from "./port-fallback";
 import type { CoreSkill, SensorCache } from "../shared/types";
+import type { NodeProvisioner } from "./NodeProvisioner";
 import { MODE_TRANSITIONS, PERIPHERAL_IDS, CreateSkillApiSchema } from "../shared/contracts";
 import type { EventMapping } from "./EventBridge";
 import pino from "pino";
@@ -61,6 +62,7 @@ export interface ControlServerDeps {
   packLoader: PackLoader;
   skillLog: SkillLog;
   getBrainConnected: () => boolean;
+  nodeProvisioner?: NodeProvisioner;
 }
 
 
@@ -147,7 +149,9 @@ export class ControlServer extends EventEmitter {
       // Mode History (backed by ModeHistory — added in 08-05)
       .add("GET", "/api/mode/history", this.handleGetModeHistory.bind(this))
       // Config (frontend constants — Expansion 6.4)
-      .add("GET", "/api/config", this.handleGetConfig.bind(this));
+      .add("GET", "/api/config", this.handleGetConfig.bind(this))
+      // Node Provisioning
+      .add("POST", "/api/nodes/register", this.handleRegisterNode.bind(this));
   }
 
   async start(): Promise<void> {
@@ -623,6 +627,29 @@ export class ControlServer extends EventEmitter {
         Object.entries(PERIPHERAL_IDS).map(([k, v]) => [k, v]),
       ),
     });
+  }
+
+  // ── Node Provisioning Endpoint ────────────────────────────────────────
+
+  private async handleRegisterNode(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    if (!this.deps.nodeProvisioner) {
+      this.sendJSON(res, 503, { error: 'NodeProvisioner not available' });
+      return;
+    }
+    const body = await this.parseBody(req) as Record<string, unknown>;
+    const spaceId = String(body.spaceId ?? 'default');
+    const role = String(body.role ?? 'base');
+    const hardware = body.hardware as string[] | undefined;
+    const wifiSsid = body.wifiSsid as string | undefined;
+    const wifiPass = body.wifiPass as string | undefined;
+    const token = this.deps.nodeProvisioner.generateToken(
+      spaceId,
+      role,
+      hardware ?? ['motion', 'temperature', 'humidity', 'audio', 'camera'],
+      wifiSsid,
+      wifiPass,
+    );
+    this.sendJSON(res, 200, { token, json: JSON.stringify(token, null, 2) });
   }
 
   // ── Static File Serving ─────────────────────────────────────────────

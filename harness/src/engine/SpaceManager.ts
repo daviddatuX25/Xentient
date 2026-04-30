@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import pino from 'pino';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { Space, CoreSkill, ObservabilityEvent } from '../shared/types';
+import { Space, CoreSkill, ObservabilityEvent, SpaceNode } from '../shared/types';
 import { SKILL_EVENTS } from '../shared/contracts';
 import { SkillExecutor } from './SkillExecutor';
 import { SkillLog } from './SkillLog';
@@ -387,6 +387,38 @@ export class SpaceManager extends EventEmitter {
         break;
       }
     }
+  }
+
+  /** Register a new node in a space (called by NodeProvisioner) */
+  registerNode(spaceId: string, node: SpaceNode): boolean {
+    const space = this.spaces.get(spaceId);
+    if (!space) return false;
+    if (space.nodes.some(n => n.nodeId === node.nodeId)) return false;
+    space.nodes.push(node);
+    logger.info({ nodeId: node.nodeId, spaceId }, 'Node registered');
+    return true;
+  }
+
+  /** Update a node's status (pending → active) (called by NodeProvisioner) */
+  updateNodeStatus(spaceId: string, nodeId: string, status: string): boolean {
+    const space = this.spaces.get(spaceId);
+    if (!space) return false;
+    const node = space.nodes.find(n => n.nodeId === nodeId);
+    if (!node) return false;
+    (node as any).status = status;
+    (node as any).lastSeen = Date.now();
+    return true;
+  }
+
+  /** Remove a node from a space (called by NodeProvisioner cleanup) */
+  removeNode(spaceId: string, nodeId: string): boolean {
+    const space = this.spaces.get(spaceId);
+    if (!space) return false;
+    const idx = space.nodes.findIndex(n => n.nodeId === nodeId);
+    if (idx < 0) return false;
+    space.nodes.splice(idx, 1);
+    logger.info({ nodeId, spaceId }, 'Node removed');
+    return true;
   }
 
   /** Called when MQTT reconnects — replay active configurations */
