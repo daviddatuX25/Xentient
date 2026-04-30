@@ -337,16 +337,22 @@ void setup() {
         Serial.printf("[BOOT] NVS config: node=%s space=%s mqtt=%s:%u\n",
                      cfg.nodeId, cfg.spaceId, cfg.mqttHost, cfg.mqttPort);
         if (!provisioning_start_portal()) {
-            Serial.println("[BOOT] WiFiManager failed to connect — restarting");
-            ESP.restart();
+            Serial.println("[BOOT] Portal timeout — entering deep sleep for 60s then retry");
+            lcd_display_face("(x_x)", "timeout...");
+            delay(1000);
+            esp_sleep_enable_timer_wakeup(60 * 1000000); // 60s in microseconds
+            esp_deep_sleep_start();
         }
     } else {
         Serial.println("[BOOT] No NVS config — starting provisioning portal");
         lcd_set_state(NodeState::BOOT);
         lcd_display_face("(+_-)", "setup mode...");
         if (!provisioning_start_portal()) {
-            Serial.println("[BOOT] Portal timeout — restarting into setup mode");
-            ESP.restart();
+            Serial.println("[BOOT] Portal timeout — entering deep sleep for 60s then retry");
+            lcd_display_face("(x_x)", "timeout...");
+            delay(1000);
+            esp_sleep_enable_timer_wakeup(60 * 1000000); // 60s in microseconds
+            esp_deep_sleep_start();
         }
         cfg = provisioning_read_config();
     }
