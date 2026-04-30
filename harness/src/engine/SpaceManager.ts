@@ -375,12 +375,21 @@ export class SpaceManager extends EventEmitter {
   }
 
   /** Handle firmware birth message — node is online and ready */
-  onNodeBirth(nodeId: string): void {
-    for (const [, space] of this.spaces) {
+  onNodeBirth(nodeId: string, spaceId?: string): void {
+    for (const [sid, space] of this.spaces) {
       const node = space.nodes.find(n => n.nodeId === nodeId);
       if (node) {
+        if (node.status !== 'pending' && node.status !== 'active') {
+          logger.warn({ nodeId, nodeStatus: node.status }, 'Birth from unregistered node — ignoring');
+          break;
+        }
+        if (spaceId && sid !== spaceId) {
+          logger.warn({ nodeId, expectedSpace: sid, claimedSpace: spaceId }, 'Birth spaceId mismatch — ignoring');
+          break;
+        }
         if (node.state === 'dormant') {
           node.state = 'running';
+          node.lastSeen = Date.now();
           logger.info({ nodeId }, 'Node birth received — transitioning to running');
           this.pushDefaultProfile(node);
         }
@@ -405,8 +414,8 @@ export class SpaceManager extends EventEmitter {
     if (!space) return false;
     const node = space.nodes.find(n => n.nodeId === nodeId);
     if (!node) return false;
-    (node as any).status = status;
-    (node as any).lastSeen = Date.now();
+    node.status = status as 'pending' | 'active';
+    node.lastSeen = Date.now();
     return true;
   }
 

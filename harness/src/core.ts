@@ -106,9 +106,9 @@ async function main() {
   mqtt.on('nodeProfileAck', (data: { nodeId: string; status: 'loaded' | 'error' }) => {
     spaceManager.onNodeProfileAck(data.nodeId, data.status);
   });
-  mqtt.on('nodeBirth', (data: { nodeId: string }) => {
+  mqtt.on('nodeBirth', (data: { nodeId: string; spaceId: string; ts: number }) => {
     nodeProvisioner.confirmNode(data.nodeId);
-    spaceManager.onNodeBirth(data.nodeId);
+    spaceManager.onNodeBirth(data.nodeId, data.spaceId);
   });
 
   // Stale provisioning token cleanup (every 5 minutes)

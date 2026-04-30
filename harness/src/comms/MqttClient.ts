@@ -11,6 +11,7 @@ export interface HeartbeatData { nodeId: string; uptime: number; peripherals: st
 export class MqttClient extends EventEmitter {
   private client: mqtt.MqttClient;
   public readonly nodeId: string;
+  private unknownTopicCount = 0;
 
   constructor(brokerUrl: string, nodeId: string) {
     super();
@@ -98,12 +99,14 @@ export class MqttClient extends EventEmitter {
         if (topic.endsWith('/profile/ack')) {
           this.emit('nodeProfileAck', data);
         } else if (topic.endsWith('/birth')) {
-          this.emit('nodeBirth', data);
+          this.emit('nodeBirth', data as { nodeId: string; spaceId: string; ts: number });
         } else {
-          logger.warn({ topic }, 'Unhandled topic');
+          this.unknownTopicCount++;
+          logger.warn({ topic, unknownTotal: this.unknownTopicCount }, 'Unhandled node sub-topic — dropping');
         }
       } else {
-        logger.warn({ topic }, 'Unhandled topic');
+        this.unknownTopicCount++;
+        logger.warn({ topic, unknownTotal: this.unknownTopicCount }, 'Unhandled MQTT topic — dropping');
       }
     } catch (err) {
       logger.error({ err, topic }, 'Failed to parse MQTT message');
