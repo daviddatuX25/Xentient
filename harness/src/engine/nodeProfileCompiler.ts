@@ -1,5 +1,8 @@
+import pino from 'pino';
 import { NodeProfile, EVENT_MASK_BITS } from '../shared/contracts';
 import type { SpaceNode, NodeSkill } from '../shared/types';
+
+const logger = pino({ name: 'node-profile-compiler' }, process.stderr);
 
 /**
  * Compiles a Core-level NodeSkill into a firmware-level NodeProfile.
@@ -20,7 +23,11 @@ export function toNodeProfile(
   let eventMask = 0;
   for (const eventType of nodeSkill.emits) {
     const bit = EVENT_MASK_BITS[eventType.toUpperCase() as keyof typeof EVENT_MASK_BITS];
-    if (bit) eventMask |= bit;
+    if (bit) {
+      eventMask |= bit;
+    } else {
+      logger.warn({ eventType }, 'Unknown event type in NodeSkill emits — skipped from eventMask');
+    }
   }
 
   return {

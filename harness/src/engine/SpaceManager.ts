@@ -14,6 +14,8 @@ import type { SkillPersistence } from './SkillPersistence';
 
 const logger = pino({ name: 'space-manager' }, process.stderr);
 
+const ACK_TIMEOUT_MS = 5000;
+
 export class SpaceManager extends EventEmitter {
   private spaces: Map<string, Space> = new Map();
   private executors: Map<string, SkillExecutor> = new Map();
@@ -21,6 +23,7 @@ export class SpaceManager extends EventEmitter {
   private persistence?: SkillPersistence;
   readonly transitionQueue: TransitionQueue;
   private packLoader?: PackLoader;
+  private pendingAcks = new Map<string, { nodeId: string; timeout: ReturnType<typeof setTimeout> }>();
 
   constructor(
     private mcpServer: McpServer,
@@ -234,7 +237,13 @@ export class SpaceManager extends EventEmitter {
       if (manifest && config) {
         for (const node of space.nodes) {
           const nodeSkillId = config.nodeAssignments[node.role];
-          if (!nodeSkillId) continue; // no assignment for this role — skip
+          if (!nodeSkillId) {
+            // No assignment for this role in the new config — reset to default
+            this.pushDefaultProfile(node);
+            node.state = 'dormant';
+            logger.info({ nodeId: node.nodeId, role: node.role, configName }, 'No NodeSkill assignment for role — pushed default profile');
+            continue;
+          }
 
           const nodeSkill = manifest.nodeSkills.find(ns => ns.id === nodeSkillId);
           if (!nodeSkill) {
@@ -250,6 +259,17 @@ export class SpaceManager extends EventEmitter {
               { v: 1, type: 'node_profile_set', ...profile },
             );
             node.state = 'running';
+            // Register ack timeout for this node
+            const ackTimeout = setTimeout(() => {
+              this.pendingAcks.delete(node.nodeId);
+              logger.warn({ nodeId: node.nodeId }, 'NodeProfile ack timeout — node may be offline');
+              node.state = 'dormant';
+              this.mcpServer.server.notification({
+                method: 'xentient/node_offline',
+                params: { nodeId: node.nodeId, reason: 'ack_timeout' },
+              } as any).catch((err: Error) => logger.error({ err }, 'Failed to send node_offline notification'));
+            }, ACK_TIMEOUT_MS);
+            this.pendingAcks.set(node.nodeId, { nodeId: node.nodeId, timeout: ackTimeout });
           } else {
             this.pushDefaultProfile(node);
             logger.warn({ configName, nodeId: node.nodeId, role: node.role }, 'NodeSkill hardware mismatch, pushed default profile');
@@ -325,6 +345,47 @@ export class SpaceManager extends EventEmitter {
     }
 
     return true;
+  }
+
+  /** Handle firmware ack for a node profile set command */
+  onNodeProfileAck(nodeId: string, status: 'loaded' | 'error'): void {
+    const pending = this.pendingAcks.get(nodeId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingAcks.delete(nodeId);
+    }
+
+    if (status === 'error') {
+      logger.warn({ nodeId }, 'NodeProfile ack received with error status');
+      for (const [, space] of this.spaces) {
+        const node = space.nodes.find(n => n.nodeId === nodeId);
+        if (node) {
+          node.state = 'dormant';
+          this.pushDefaultProfile(node);
+          this.mcpServer.server.notification({
+            method: 'xentient/node_error',
+            params: { nodeId, status: 'error' },
+          } as any).catch((err: Error) => logger.error({ err }, 'Failed to send node_error notification'));
+          break;
+        }
+      }
+    } else {
+      logger.info({ nodeId }, 'NodeProfile ack received — profile loaded');
+    }
+  }
+
+  /** Called when MQTT reconnects — replay active configurations */
+  onMqttReconnect(): void {
+    logger.info('MQTT reconnected — replaying active configurations');
+    for (const [spaceId, space] of this.spaces) {
+      if (space.activeConfig && space.activeConfig !== 'default') {
+        this.transitionQueue.enqueue({
+          type: 'activate_config',
+          configName: space.activeConfig,
+          spaceId,
+        });
+      }
+    }
   }
 
   /**

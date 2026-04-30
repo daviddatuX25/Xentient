@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-// Mock fs.writeFileSync so we can spy on disk persistence
+// Mock fs.writeFileSync and renameSync for atomic persist
 const writeFileSyncSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+vi.spyOn(fs, 'renameSync').mockImplementation(() => {});
 vi.spyOn(fs, 'existsSync').mockReturnValue(true);
 vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({
   pack: { name: 'test-pack', version: '1.0.0' },
@@ -44,14 +45,14 @@ describe('PackLoader.registerConfig', () => {
     writeFileSyncSpy.mockClear();
   });
 
-  it('registers a valid configuration', () => {
+  it('registers a valid configuration', async () => {
     const loader = makeLoader();
     loader.loadPack('test-pack');
 
     const before = loader.getLoadedPackManifest()!;
     expect(before.configurations).toHaveLength(1);
 
-    loader.registerConfig({
+    await loader.registerConfig({
       name: 'deep-focus',
       displayName: 'Deep Focus',
       nodeAssignments: {},
@@ -64,11 +65,11 @@ describe('PackLoader.registerConfig', () => {
     expect(after.configurations[1].name).toBe('deep-focus');
   });
 
-  it('rejects a duplicate config name', () => {
+  it('rejects a duplicate config name', async () => {
     const loader = makeLoader();
     loader.loadPack('test-pack');
 
-    loader.registerConfig({
+    await loader.registerConfig({
       name: 'default',
       displayName: 'Duplicate',
       nodeAssignments: {},
@@ -83,11 +84,11 @@ describe('PackLoader.registerConfig', () => {
     expect(writeFileSyncSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects an invalid coreSkill ID', () => {
+  it('rejects an invalid coreSkill ID', async () => {
     const loader = makeLoader();
     loader.loadPack('test-pack');
 
-    loader.registerConfig({
+    await loader.registerConfig({
       name: 'broken',
       displayName: 'Broken',
       nodeAssignments: {},
@@ -100,11 +101,11 @@ describe('PackLoader.registerConfig', () => {
     expect(writeFileSyncSpy).not.toHaveBeenCalled();
   });
 
-  it('accepts a builtin coreSkill ID', () => {
+  it('accepts a builtin coreSkill ID', async () => {
     const loader = makeLoader();
     loader.loadPack('test-pack');
 
-    loader.registerConfig({
+    await loader.registerConfig({
       name: 'monitor-only',
       displayName: 'Monitor Only',
       nodeAssignments: {},
@@ -117,11 +118,11 @@ describe('PackLoader.registerConfig', () => {
     expect(manifest.configurations[1].name).toBe('monitor-only');
   });
 
-  it('persists manifest to disk', () => {
+  it('persists manifest to disk', async () => {
     const loader = makeLoader();
     loader.loadPack('test-pack');
 
-    loader.registerConfig({
+    await loader.registerConfig({
       name: 'night-mode',
       displayName: 'Night Mode',
       nodeAssignments: {},
@@ -133,16 +134,17 @@ describe('PackLoader.registerConfig', () => {
     const writtenPath = writeFileSyncSpy.mock.calls[0][0] as string;
     expect(writtenPath).toContain('test-pack');
     expect(writtenPath).toContain('skills.json');
+    expect(writtenPath).toContain('.tmp');  // atomic write uses .tmp suffix
     const writtenData = JSON.parse(writeFileSyncSpy.mock.calls[0][1] as string);
     expect(writtenData.configurations).toHaveLength(2);
     expect(writtenData.configurations[1].name).toBe('night-mode');
   });
 
-  it('does nothing when no pack is loaded', () => {
+  it('does nothing when no pack is loaded', async () => {
     const loader = makeLoader();
     // Do NOT call loadPack
 
-    loader.registerConfig({
+    await loader.registerConfig({
       name: 'orphan',
       displayName: 'Orphan',
       nodeAssignments: {},

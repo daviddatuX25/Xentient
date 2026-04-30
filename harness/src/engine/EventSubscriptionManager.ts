@@ -48,6 +48,9 @@ export class EventSubscriptionManager {
 
   /** Flush buffered events to the notification callback */
   private flush(sub: EventSubscription): void {
+    // Guard: subscription may have been removed between timer scheduling and firing
+    if (!this.subscriptions.has(sub.id)) return;
+
     if (sub.buffer.length === 0) return;
 
     const events = [...sub.buffer];

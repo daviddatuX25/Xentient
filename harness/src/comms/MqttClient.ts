@@ -36,6 +36,7 @@ export class MqttClient extends EventEmitter {
         'xentient/session/complete',
         'xentient/session/error',
         'xentient/display',
+        'xentient/node/+/profile/ack',
       ];
       this.client.subscribe(topics, { qos: 1 }, (err) => {
         if (err) logger.error({ err }, 'Failed to subscribe');
@@ -51,6 +52,11 @@ export class MqttClient extends EventEmitter {
     this.client.on('error', (err) => {
       logger.error({ err }, 'MQTT error');
       this.emit('error', err);
+    });
+
+    this.client.on('reconnect', () => {
+      logger.info('MQTT reconnecting...');
+      this.emit('reconnect');
     });
   }
 
@@ -87,6 +93,8 @@ export class MqttClient extends EventEmitter {
         this.emit('modeCommand', data);
       } else if (topic === 'xentient/control/trigger') {
         this.emit('triggerPipeline', data);
+      } else if (topic.startsWith('xentient/node/') && topic.endsWith('/profile/ack')) {
+        this.emit('nodeProfileAck', data);
       } else {
         logger.warn({ topic }, 'Unhandled topic');
       }

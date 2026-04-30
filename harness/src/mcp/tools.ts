@@ -340,7 +340,7 @@ export function createToolHandlers(deps: McpToolDeps) {
         ...(transitions ? { transitions: transitions as any } : {}),
       };
 
-      deps.packLoader.registerConfig(config);
+      await deps.packLoader.registerConfig(config);
 
       // Add to space availableConfigs
       const spaceId = 'default'; // v1: single space

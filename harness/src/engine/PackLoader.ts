@@ -15,6 +15,7 @@ export class PackLoader extends EventEmitter {
   private loadedPack: string | null = null;
   private loadedSkillIds: string[] = [];
   private cachedManifest: ParsedManifest | null = null;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private packsDir: string,
@@ -105,7 +106,7 @@ export class PackLoader extends EventEmitter {
   }
 
   /** Register a new configuration (Brain-authored). Adds to in-memory manifest and persists to disk. */
-  registerConfig(config: Configuration): void {
+  async registerConfig(config: Configuration): Promise<void> {
     const manifest = this.getLoadedPackManifest();
     if (!manifest) {
       logger.error('No pack loaded — cannot register configuration');
@@ -127,21 +128,28 @@ export class PackLoader extends EventEmitter {
     // Add with source tag
     manifest.configurations.push({ ...config });
     // Persist to disk
-    this.persistManifest(manifest);
+    await this.persistManifest(manifest);
     logger.info({ configName: config.name }, 'Brain-authored configuration registered');
   }
 
-  /** Persist the manifest back to disk. */
-  private persistManifest(manifest: ParsedManifest): void {
-    const packName = this.getLoadedPack();
-    if (!packName) return;
-    const manifestPath = path.join(this.packsDir, packName, 'skills.json');
-    try {
-      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
-      logger.info({ packName, path: manifestPath }, 'Pack manifest persisted');
-    } catch (err) {
-      logger.error({ err, packName }, 'Failed to persist pack manifest');
-    }
+  /** Persist the manifest back to disk with atomic write. */
+  private persistManifest(manifest: ParsedManifest): Promise<void> {
+    this.writeQueue = this.writeQueue.then(async () => {
+      const packName = this.getLoadedPack();
+      if (!packName) return;
+      const manifestPath = path.join(this.packsDir, packName, 'skills.json');
+      try {
+        const data = JSON.stringify(manifest, null, 2);
+        const tmpPath = manifestPath + '.tmp';
+        fs.writeFileSync(tmpPath, data, 'utf-8');
+        fs.renameSync(tmpPath, manifestPath);
+        logger.info({ packName, path: manifestPath }, 'Pack manifest persisted');
+      } catch (err) {
+        logger.error({ err, packName }, 'Failed to persist pack manifest');
+        throw err;
+      }
+    });
+    return this.writeQueue;
   }
 
   reload(): void {

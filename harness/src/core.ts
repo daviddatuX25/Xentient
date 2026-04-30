@@ -92,6 +92,12 @@ async function main() {
   // Wire spaceManager into MCP deps (createToolHandlers captures deps by reference)
   mcpDeps.spaceManager = spaceManager;
 
+  // Wire MQTT reconnect → profile replay + node_profile_ack handling
+  mqtt.on('reconnect', () => spaceManager.onMqttReconnect());
+  mqtt.on('nodeProfileAck', (data: { nodeId: string; status: 'loaded' | 'error' }) => {
+    spaceManager.onNodeProfileAck(data.nodeId, data.status);
+  });
+
   // --- EventSubscriptionManager: Sprint 4 event subscription system ---
   const eventSubManager = new EventSubscriptionManager((subscriptionId: string, events: unknown[]) => {
     mcpServer.server.notification({
