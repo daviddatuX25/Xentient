@@ -115,7 +115,11 @@ document.addEventListener('DOMContentLoaded', function() {
         try { JSON.parse(val); }
         catch(err) {
           e.preventDefault();
-          alert('Provisioning JSON parse error: ' + err.message + '\nPlease fix the JSON or clear the field to use manual entries.');
+          var msg = document.createElement('div');
+          msg.style.cssText = 'color:red;padding:8px;margin:4px 0;border:1px solid red;background:#fee';
+          msg.textContent = 'Provisioning JSON parse error: ' + err.message;
+          jsonField.parentNode.insertBefore(msg, jsonField.nextSibling);
+          setTimeout(function() { msg.remove(); }, 5000);
           return false;
         }
       }
@@ -138,10 +142,25 @@ document.addEventListener('DOMContentLoaded', function() {
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, provJson);
         if (!err) {
-            // Validate required fields
-            if (!doc["mqttBroker"].is<const char*>() && !doc["nodeId"].is<const char*>()) {
-                Serial.println("[PROV] JSON missing required fields (mqttBroker, nodeId) — saving what we have");
+            // Validate required fields — mqttBroker and nodeId are mandatory
+            bool missingRequired = !doc["mqttBroker"].is<const char*>() || !doc["nodeId"].is<const char*>();
+            if (missingRequired) {
+                Serial.println("[PROV] JSON missing required fields (mqttBroker or nodeId) — aborting save");
+                return false;
             }
+            // Validate field length bounds (must fit in NVS + C struct)
+            auto checkLen = [](const char* label, const char* val, size_t max) -> bool {
+                if (val && strlen(val) > max) {
+                    Serial.printf("[PROV] Field '%s' too long (%u > %u) — rejected\n", label, (unsigned)strlen(val), (unsigned)max);
+                    return false;
+                }
+                return true;
+            };
+            if (!checkLen("mqttBroker", doc["mqttBroker"].as<const char*>(), 45) ||
+                !checkLen("nodeId", doc["nodeId"].as<const char*>(), 23) ||
+                !checkLen("spaceId", doc["spaceId"].is<const char*>() ? doc["spaceId"].as<const char*>() : "", 23) ||
+                !checkLen("wsHost", doc["wsHost"].is<const char*>() ? doc["wsHost"].as<const char*>() : "", 45))
+                return false;
             Preferences prefs;
             prefs.begin(NVS_NAMESPACE, false);
             // WiFi creds handled by WiFiManager, not NVS
@@ -191,6 +210,9 @@ void provisioning_clear() {
     prefs.remove(NVS_KEY_SPACE_ID);
     prefs.remove(NVS_KEY_WS_HOST);
     prefs.remove(NVS_KEY_WS_PORT);
+    // Legacy keys from pre-S3 firmware (wifi_ssid/wifi_pass in xentient namespace)
+    prefs.remove("wifi_ssid");
+    prefs.remove("wifi_pass");
     prefs.end();
 
     // Clear WiFiManager's stored WiFi credentials
@@ -218,4 +240,18 @@ bool provisioning_check_factory_reset() {
         }
     }
     return false;
+}
+
+void provisioning_migrate_legacy() {
+    Preferences prefs;
+    prefs.begin(NVS_NAMESPACE, false);
+    if (prefs.isKey("wifi_ssid")) {
+        prefs.remove("wifi_ssid");
+        Serial.println("[PROV] Migrated: removed legacy wifi_ssid key");
+    }
+    if (prefs.isKey("wifi_pass")) {
+        prefs.remove("wifi_pass");
+        Serial.println("[PROV] Migrated: removed legacy wifi_pass key");
+    }
+    prefs.end();
 }
