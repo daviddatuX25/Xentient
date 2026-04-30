@@ -3,6 +3,10 @@
 > **This is the single authoritative direction document.**
 > Read this before touching any code. All other docs are subordinate to this.
 > Last updated: 2026-04-30
+>
+> **Architectural shift (2026-04-30):** Core's operating concept is now `activeConfig` (configuration),
+> not `activeMode` (behavioral mode). See `07-REALIGN-PLAN.md` for the full realignment plan.
+> NodeSkill → NodeProfile compilation is the two-layer contract model.
 
 ---
 
@@ -308,34 +312,64 @@ This is what Hermes's `skill-improver` meta-skill does. Xentient is the platform
 | Core: ControlServer (16+ REST endpoints) | Complete |
 | Core: Observability SSE (10 event types) | Complete |
 | Core: Web Dashboard | Complete |
-| Core: Pipeline.ts (STT→LLM→TTS inside Core) | Wrong layer — needs removal |
+| Core: Pipeline.ts (STT→LLM→TTS inside Core) | Wrong layer — DEPRECATED, see cutover gate below |
+| Core: Configuration system (activeConfig) | Not built — realignment Sprint 1-2 |
+| Core: TransitionQueue | Not built — realignment Sprint 2 |
+| Core: Capability discovery MCP tools | Not built — realignment Sprint 3 |
+| Core: Event subscription manager | Not built — realignment Sprint 4 |
+| Core: Brain stream relay | Not built — realignment Sprint 6 |
 | Brain: brain-basic MCP client | Working, correct layer |
 | Brain: Separation into standalone process | Partial — brain-basic works but Brain Interface not formalized |
-| Brain: Brain Feed streaming | Not built |
-| L0: Node Skill system | Not built |
-| L0: Firmware Mode Task loader | Not built |
+| Brain: Brain Feed streaming | Not built — realignment Sprint 6 |
+| L0: Node Skill → NodeProfile compilation | Not built — realignment Sprint 1 |
+| L0: Firmware two-task model + hot-swap | Not built — realignment Sprint 8 |
 | Brain: Hermes adapter | Not built |
 | Hosting: Core/Brain deployment guide | Not built |
 
+### Pipeline.ts Cutover Gate
+
+Pipeline.ts will be deleted from Core when ALL of the following are true:
+
+1. Realignment Sprints 1-6 are complete
+2. brain-basic successfully processes a voice escalation end-to-end:
+   - Receives `xentient/skill_escalated` notification
+   - Runs STT on the audio payload
+   - Routes to LLM with context
+   - Generates TTS audio
+   - Calls `xentient_play_audio` via MCP tool
+   - Audio plays through the Node Base speaker
+3. A second test: Brain streams reasoning via `xentient_brain_stream` and it appears in the Dashboard
+4. No regression in existing voice pipeline functionality
+
+Until ALL four conditions are met, Pipeline.ts stays. No exceptions.
+
 ---
 
-## The Next Right Steps (Priority Order)
+## The Next Right Steps — Configuration-Centric Realignment
 
-1. **Phase 9: Pipeline.ts migration** — Migrate STT→LLM→TTS out of Core's `engine/Pipeline.ts`. Run both in parallel until Brain Channel 1 and 3 are confirmed working end-to-end (brain-basic receives escalation, calls STT/LLM/TTS, calls `xentient_play_audio` successfully). Then remove Core's Pipeline.ts. **Done when:** brain-basic processes a voice escalation end-to-end via MCP, and Core's Pipeline.ts is deleted.
+**The architectural shift:** Core's operating concept changes from `activeMode` (behavioral mode) to `activeConfig` (configuration). A configuration bundles a NodeProfile + CoreSkills + BrainSkills + transitions. See `07-REALIGN-PLAN.md` for full details.
 
-2. **Phase 10: 4-layer voice CoreSkill pipeline** — noise-gate, voice-classifier, keyword-spotter, command-capture as proper CoreSkills with escalation config. **Done when:** all four CoreSkills fire in sequence on audio input and escalate to Brain on keyword detection.
+1. **Sprint 1: Type Foundation** — Add Configuration, NodeProfile, toNodeProfile() to type system. Remove BehavioralMode/modeFilter, add configFilter. **Done when:** types compile, all tests pass after rename.
 
-3. **Phase 11: L0 Node Skills** — NodeSkill type, MQTT push/ack contract, firmware Mode Task loader, paired activation with CoreSkills, first example skills. **Done when:** Core pushes a Node Skill to ESP32 via MQTT, ESP32 acks, and both halves produce coordinated behavior.
+2. **Sprint 2: activateConfig + TransitionQueue** — The architectural hinge. Config transitions are queued, not immediate. NodeProfile pushed to node. Skills filter by activeConfig. **Done when:** activateConfig() works end-to-end, queue ordering verified, config-scope filtering works.
 
-4. **Phase 12: Brain Feed** — `xentient_brain_stream` MCP tool, SSE relay to Dashboard, live reasoning display. **Done when:** Brain reasoning tokens appear in the Dashboard SSE stream in real time.
+3. **Sprint 3: MCP Capability Discovery** — `xentient_get_capabilities` + `xentient_get_skill_schema`. Brain discovers what the room can do without hardcoded knowledge. **Done when:** both tools return correct structured responses.
 
-5. **Phase 13: Brain Interface formalization** — `brain/index.ts` three-channel reference implementation, formal escalation schema, stream protocol, tool contract. **Done when:** a minimal Brain script can connect, receive escalations, stream reasoning, and call tools via the documented interface.
+4. **Sprint 4: Brain Event Subscription** — `xentient_subscribe_events` with `maxRateMs` rate limiting. Brain observes passively. **Done when:** rate limiting verified, event batching works.
 
-6. **Phase 14: Hermes wiring** — `brain/hermes/HermesAdapter.ts`. Make Hermes the reference Brain for the escalated voice pipeline. **Done when:** Hermes processes a voice escalation with memory recall, LLM reasoning, and tool calls visible in the Brain Feed.
+5. **Sprint 5: Brain Config Authoring** — `xentient_register_config`. Brain creates new configurations. Room gets permanently smarter. **Done when:** Brain-authored config appears in capabilities and can be activated.
 
-7. **Phase 15: Deployment config** — Docker Compose: Core container + Brain container. Same-host or separate-host. Environment variable for Brain MCP endpoint. **Done when:** `docker compose up` starts both Core and Brain, Brain connects to Core via MCP, voice pipeline works end-to-end.
+6. **Sprint 6: Brain Stream** — `xentient_brain_stream`. Brain pushes reasoning tokens to SSE bus. Dashboard Brain Feed. **Done when:** reasoning tokens appear in Dashboard SSE stream.
 
-**Note on Phases 9 and 10:** Phases 9 and 10 are sequential in their starts but can overlap in execution — begin Phase 10 CoreSkill development once brain-basic proves Channel 1 and 3 work, before Pipeline.ts is deleted. The four-layer CoreSkills feed into the same escalation path being validated in Phase 9.
+7. **Sprint 7: Pipeline.ts Cutover Gate** — Mark deprecated, write gate, no deletion yet. **Done when:** gate documented in CONTEXT.md.
+
+8. **Sprint 8: Firmware Two-Task Model** — NodeProfile C struct, Config Task, hot-swap protocol. **Done when:** ESP32 receives profile via MQTT, acks, sensor intervals change.
+
+9. **Sprint 9: Documentation Realignment** — Zero references to activeMode/modeFilter/BehavioralMode. All docs use activeConfig/configFilter/Configuration.
+
+**Sprint dependency graph:** 1 → 2 → {3, 4, 5}. Sprints 6, 7, 8 can start after Sprint 1. Sprint 9 is always last.
+
+**After realignment (post-Sprint 9):** The original phase plan resumes — Phase 10 (4-layer voice CoreSkills), Phase 11 (L0 Node Skills, now trivially done by Sprint 8), Phase 12 (Brain Feed, now done by Sprint 6), Phase 14 (Hermes), Phase 15 (Docker deployment).
 
 ---
 
