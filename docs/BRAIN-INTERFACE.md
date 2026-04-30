@@ -28,7 +28,7 @@ interface EscalationPayload {
   escalation_id: string        // unique per escalation, used to group Brain Feed events
   skill_id: string             // the CoreSkill that triggered this escalation
   space_id: string             // which Space this escalation belongs to
-  mode: SpaceMode              // current mode at time of escalation
+  mode: CoreNodeState           // current node state at time of escalation (dormant/running)
   timestamp: number            // epoch-millis uint32
   audio?: string               // base64-encoded PCM audio (S16LE, 16kHz, mono)
   sensor_snapshot?: SensorSnapshot
@@ -132,15 +132,83 @@ The Brain calls `xentient_*` MCP tools to act on the room. These are the same to
 | Tool | Purpose | Safe from Brain |
 |------|---------|-----------------|
 | `xentient_play_audio` | Play TTS audio through Node Base speaker | Yes |
-| `xentient_set_mode` | Change SpaceMode (sleep/listen/active/record) | Yes |
+| `xentient_activate_config` | Activate a named configuration (replaces `xentient_set_mode`) | Yes |
+| `xentient_set_dormant` | Set a node to dormant state (replaces `xentient_set_mode` for sleep) | Yes |
+| `xentient_get_capabilities` | Discover room capabilities, active config, node profiles, event masks | Yes |
+| `xentient_get_skill_schema` | Get the JSON schema for a skill's trigger and actions | Yes |
+| `xentient_subscribe_events` | Subscribe to SSE events with rate limiting (maxRateMs) | Yes |
+| `xentient_unsubscribe_events` | Unsubscribe from SSE events | Yes |
+| `xentient_register_config` | Register a Brain-authored configuration (room gets permanently smarter) | Yes |
 | `xentient_register_skill` | Register a new L2 Brain Skill | Yes |
 | `xentient_update_skill` | Update skill parameters (self-optimization loop) | Yes |
 | `xentient_disable_skill` | Disable a skill temporarily | Yes |
 | `xentient_list_skills` | List all registered skills with state | Yes |
 | `xentient_get_skill_log` | Get fire history for a skill | Yes |
-| `xentient_switch_mode` | Switch operational mode | Yes |
 | `xentient_resolve_conflict` | Resolve a skill conflict | Yes |
 | `xentient_brain_stream` | Push reasoning events to SSE bus | Yes |
+
+### Node Offline Notification
+
+When Core pushes a `NodeProfile` to a node via MQTT and does not receive a `node_profile_ack` within 5 seconds, Core emits a `xentient/node_offline` notification to all connected MCP clients.
+
+**What triggers it:** 5-second ack timeout on `node_profile_set` MQTT publish.
+
+**What it contains:**
+```json
+{ "nodeId": "node-01", "reason": "ack_timeout" }
+```
+
+**What Brain should do:** Do not try to activate configurations on that node until a `node_online` or reconnect notification is received. The node may be offline, disconnected, or rebooting.
+
+When the node reconnects, Core automatically replays the active configuration via `onMqttReconnect()`.
+
+---
+
+## Channel 1.5: Event Subscription (Passive Observation)
+
+Brain can passively observe room events without receiving full escalations. This is useful for monitoring sensor data, mode transitions, and skill fires without triggering any response.
+
+### `xentient_subscribe_events`
+
+Subscribes to SSE events with optional rate limiting. Brain calls this to observe the room passively.
+
+```typescript
+await client.callTool("xentient_subscribe_events", {
+  eventTypes: ["motion_detected", "sensor_update", "skill_fired"],
+  maxRateMs: 1000  // optional: rate-limit notifications to 1 per second
+});
+```
+
+### `xentient_unsubscribe_events`
+
+Removes a previously created event subscription.
+
+```typescript
+await client.callTool("xentient_unsubscribe_events", {
+  subscriptionId: "sub-abc123"
+});
+```
+
+---
+
+## Config Authoring (Room Gets Smarter)
+
+Brain can create new configurations at runtime via `xentient_register_config`. This enables the self-optimization loop: Brain observes room behavior, identifies patterns, and creates optimized configurations.
+
+```typescript
+await client.callTool("xentient_register_config", {
+  name: "deep-focus",
+  displayName: "Deep Focus",
+  nodeAssignments: {
+    "ceiling-unit": "study-presence",
+    "desk-unit": "mic-vad"
+  },
+  coreSkills: ["_pir-wake", "noise-gate"],
+  brainSkills: []
+});
+```
+
+Registered configurations appear in `xentient_get_capabilities` and can be activated with `xentient_activate_config`. They persist across Core restarts (saved to `var/skills.json` inside the pack manifest).
 
 ### Tool Call Flow
 

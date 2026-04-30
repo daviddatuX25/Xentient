@@ -23,39 +23,47 @@ The same physical hardware can be a simple room assistant in one Space and a ful
 ## Space Interface
 
 ```typescript
+interface SpaceNode {
+  nodeId: string;            // MQTT client ID of the physical Node Base
+  role: string;              // role within this space: "ceiling-unit", "teacher-desk", etc.
+  hardware: string[];        // available peripherals: ["motion", "temperature", "audio"]
+  state: CoreNodeState;      // dormant | running
+}
+
 interface Space {
   id: string;                // kebab-case: "living-room", "study-desk"
-  nodeBaseId: string;        // MQTT node ID of the physical hardware
+  nodes: SpaceNode[];        // physical nodes assigned to this space
   activePack: string;        // which pack is loaded
-  mode: SpaceMode;           // current operational mode
+  activeConfig: string;      // which configuration is active (e.g., "classroom", "idle")
+  availableConfigs: string[];// configurations available in the active pack
   integrations: Integration[];// which AI brains are available
   role?: string;             // optional context: "student", "family", "dev"
   sensors: string[];         // available peripherals (from peripheral ID registry)
 }
+
+type CoreNodeState = "dormant" | "running";
 ```
 
 **Field rules:**
 - `id`: `[a-z0-9-]{1,32}` kebab-case. Unique across all Spaces.
-- `nodeBaseId`: References a physical Node Base by MQTT client ID. One Node Base per Space (v1).
+- `nodes`: Array of physical Node Bases assigned to this space. Each has a role, hardware capabilities, and state.
 - `activePack`: Must reference a pack that exists in `packs/`. Validated at Space creation time.
-- `mode`: Current operational mode (see Mode State Machine below).
+- `activeConfig`: The currently active configuration name. Defaults to `"default"`. Changed via `activateConfig()` which transitions through `TransitionQueue`.
 - `integrations`: Ordered array. First entry is the primary integration for default routing.
 - `role`: Optional string that affects memory scoping and persona behavior.
 - `sensors`: Array of peripheral type names from the ID registry in CONTRACTS.md.
 
 ---
 
-## SpaceMode Type
+## CoreNodeState Type
 
 ```typescript
-type SpaceMode =
-  | "sleep"      // low power, PIR wake only, no audio processing
-  | "listen"     // listening for wake word / sound triggers, passive
-  | "active"     // full conversation, all integrations available
-  | "record"     // recording mode, audio capture only, no response
+type CoreNodeState =
+  | "dormant"    // node is offline, ack timeout, or not yet configured
+  | "running"    // node is actively running a NodeProfile
 ```
 
-Modes are not arbitrary states — they correspond to hardware power and processing states. The Mode Manager enforces valid transitions (see below).
+Node states are managed by `SpaceManager`. A node transitions to `running` when it acks a `node_profile_set`. It transitions to `dormant` on ack timeout or explicit `set_dormant`. The `ModeManager` still handles the hardware state machine (sleep/listen/active/record) for the overall room mode, but `CoreNodeState` tracks whether individual nodes are operational.
 
 ---
 
@@ -131,14 +139,39 @@ The Mode Manager is a core component. It:
 
 ---
 
+## Configurations (Behavioral Profiles)
+
+A **Configuration** is a named bundle of node assignments and skill activations. While `ModeManager` handles the hardware state machine (sleep/listen/active/record), configurations define *which skills are active and which NodeProfiles are pushed to each node*.
+
+```typescript
+interface Configuration {
+  name: string                    // kebab-case: "classroom", "idle", "deep-focus"
+  displayName: string             // "Classroom Mode", "Idle"
+  nodeAssignments: Record<string, string>  // role → NodeSkill ID
+  coreSkills: string[]            // CoreSkill IDs to activate
+  brainSkills?: string[]           // BrainSkill IDs to activate (optional)
+}
+```
+
+When a configuration is activated:
+1. The `TransitionQueue` enqueues an `activate_config` action.
+2. `SpaceManager.executeConfigTransition()` compiles each node's assigned NodeSkill into a `NodeProfile` via `toNodeProfile()`.
+3. Profiles are pushed to nodes via MQTT `xentient/node/{nodeId}/profile/set`.
+4. A 5-second ack timer starts for each node. Timeout → node marked `dormant`, Brain notified via `xentient/node_offline`.
+5. CoreSkills are activated/filtered based on `configFilter`.
+
+On MQTT reconnect, `onMqttReconnect()` replays the active configuration for all spaces.
+
+---
+
 ## Space Examples
 
-| Space | Node Base | Pack | Mode (default) | Integrations | Role |
-|-------|-----------|------|----------------|-------------|------|
-| `living-room` | node-01 | `family-companion` | listen | hermes+mem0 | family |
-| `study-desk` | node-02 | `study-buddy` | active | hermes+mem0, openclaw | student |
-| `workshop` | node-03 | `dev-assistant` | active | hermes+mem0, openclaw, archon | developer |
-| `bedroom` | node-04 | `prayer-companion` | listen | hermes+mem0 | personal |
+| Space | Nodes | Pack | Config (default) | Integrations | Role |
+|-------|-------|------|------------------|---------------|------|
+| `living-room` | node-01 (ceiling-unit), node-02 (sofa-unit) | `family-companion` | default | hermes+mem0 | family |
+| `study-desk` | node-03 (desk-unit) | `study-buddy` | classroom | hermes+mem0, openclaw | student |
+| `workshop` | node-04 (bench-unit) | `dev-assistant` | idle | hermes+mem0, openclaw, archon | developer |
+| `bedroom` | node-05 (nightstand-unit) | `prayer-companion` | default | hermes+mem0 | personal |
 
 Each Space demonstrates the flexibility principle: same hardware architecture, different identity and capability set. The `living-room` Space is a family-friendly assistant; the `workshop` Space is a developer workstation with coding workflows.
 
@@ -193,17 +226,24 @@ Control messages follow the CONTRACTS.md versioning and envelope rules.
 { "v": 1, "type": "space_status", "spaces": [
   {
     "id": "living-room",
-    "nodeBaseId": "node-01",
+    "nodes": [
+      { "nodeId": "node-01", "role": "ceiling-unit", "hardware": ["motion", "temperature"], "state": "running" },
+      { "nodeId": "node-02", "role": "sofa-unit", "hardware": ["motion", "audio"], "state": "dormant" }
+    ],
     "activePack": "family-companion",
-    "mode": "listen",
+    "activeConfig": "default",
+    "availableConfigs": ["default", "movie-night"],
     "integrations": ["hermes+mem0"],
     "online": true
   },
   {
     "id": "study-desk",
-    "nodeBaseId": "node-02",
+    "nodes": [
+      { "nodeId": "node-03", "role": "desk-unit", "hardware": ["motion", "audio", "temperature"], "state": "running" }
+    ],
     "activePack": "study-buddy",
-    "mode": "active",
+    "activeConfig": "classroom",
+    "availableConfigs": ["default", "classroom", "deep-focus"],
     "integrations": ["hermes+mem0", "openclaw"],
     "online": false
   }

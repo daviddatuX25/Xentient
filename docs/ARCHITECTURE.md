@@ -14,7 +14,7 @@ flowchart TB
         direction TB
         SE["SkillExecutor<br/>heartbeat loop"]
         MM["ModeManager<br/>sleep/listen/active/record"]
-        SM["SpaceManager<br/>identity + permissions"]
+        SM["SpaceManager<br/>identity + configurations"]
         MC["MqttClient<br/>Node Base bridge"]
         AS["AudioServer<br/>PCM WebSocket"]
         CS["CameraServer<br/>JPEG WebSocket"]
@@ -96,7 +96,7 @@ All paths reference actual source files in `harness/src/`.
 |-----------|------|------|
 | Entrypoint | `core.ts` | Starts all subsystems, wires dependencies |
 | SkillExecutor | `engine/SkillExecutor.ts` | Heartbeat loop: tick → evaluate triggers → fire actions → escalate |
-| SpaceManager | `engine/SpaceManager.ts` | Space identity, permissions, active pack, mode |
+| SpaceManager | `engine/SpaceManager.ts` | Space identity, configurations, node assignments, ack tracking |
 | ModeManager | `engine/ModeManager.ts` | State machine: sleep/listen/active/record |
 | PackLoader | `engine/PackLoader.ts` | Load skill manifests from `packs/` directories |
 | MqttClient | `comms/MqttClient.ts` | Bridge to ESP32 Node Bases via Mosquitto |
@@ -138,7 +138,7 @@ interface EscalationPayload {
   escalation_id: string        // unique per escalation, groups Brain Feed events
   skill_id: string
   space_id: string
-  mode: SpaceMode
+  mode: CoreNodeState           // dormant or running
   timestamp: number
   audio?: string               // base64 PCM
   sensor_snapshot?: SensorSnapshot
@@ -191,6 +191,42 @@ Node Skills are behavioral contracts pushed from Core to Node Bases via MQTT. Th
 - Enum-gated event types (no arbitrary MQTT floods)
 - Hardware capability declarations checked before push
 - Core won't push a camera skill to a node with no camera
+
+---
+
+## 5a. NodeProfile Compilation Pipeline
+
+When a configuration is activated, Core compiles each node's assigned NodeSkill into a firmware-ready `NodeProfile` via `toNodeProfile()` in `engine/nodeProfileCompiler.ts`. This is a two-layer contract model:
+
+```
+NodeSkill (Core-level)  →  toNodeProfile()  →  NodeProfile (firmware-level)
+```
+
+**NodeSkill** lives in the pack manifest. It declares `requires` (hardware), `sampling`, `emits` (event types), and `compatibleConfigs`.
+
+**NodeProfile** is the compiled binary payload pushed to the ESP32 over MQTT. It contains the `eventMask` (bitmask), `micMode` (0=off, 1=vad-only, 2=always-on), sensor intervals, and LCD strings — everything the firmware Mode Task needs.
+
+The compilation step (`toNodeProfile()`) checks hardware compatibility, maps event type strings to bitmask bits, and validates `micMode`. If a node lacks required hardware, the compiler returns `null` and Core falls back to the default profile.
+
+---
+
+## 5b. Configuration Transitions & Ack Timeout
+
+Configuration changes are not immediate — they go through a `TransitionQueue` in SpaceManager. This ensures:
+
+1. **Ordered transitions:** If Brain rapidly switches config A → B → C, they execute in order, not as a race.
+2. **Ack tracking:** When Core pushes a `NodeProfile` to a node, it starts a 5-second ack timer. If the node doesn't respond with `node_profile_ack` within 5 seconds, Core marks the node `dormant` and emits a `xentient/node_offline` notification.
+3. **Reconnect replay:** On MQTT reconnect (`onMqttReconnect()`), Core re-enqueues the active configuration for all spaces. This ensures firmware stuck on `DEFAULT_PROFILE` after a broker restart catches up.
+
+```
+activateConfig("classroom")
+  → TransitionQueue.enqueue({type: 'activate_config', configName: 'classroom'})
+  → drain() → executeConfigTransition()
+    → for each node: toNodeProfile(nodeSkill, node) → MQTT publish
+    → pendingAcks.set(nodeId, { timeout: 5s })
+    → on ack: clearTimeout, mark node 'running'
+    → on timeout: mark node 'dormant', notify Brain via xentient/node_offline
+```
 
 ---
 
@@ -248,9 +284,9 @@ sequenceDiagram
     participant MQTT as Mosquitto
     participant NODE as Node Base
 
-    CORE->>CORE: mode change → select Node Skill
+    CORE->>CORE: config change → compile NodeProfile via toNodeProfile()
     CORE->>CORE: check hardware declaration vs node capabilities
-    CORE->>MQTT: publish xentient/node/{nodeId}/skill/set
+    CORE->>MQTT: publish xentient/node/{nodeId}/profile/set
     MQTT->>NODE: receive Node Skill config
     NODE->>NODE: load into Mode Task
     NODE->>MQTT: publish xentient/node/{nodeId}/skill/ack
@@ -301,8 +337,10 @@ xentient/                         ← this repo
 │   │   ├── engine/
 │   │   │   ├── SkillExecutor.ts   ← heartbeat loop executing CoreSkills
 │   │   │   ├── ModeManager.ts     ← sleep/listen/active/record
-│   │   │   ├── SpaceManager.ts    ← identity + permissions
-│   │   │   └── PackLoader.ts      ← load skill manifests from packs/
+│   │   │   ├── SpaceManager.ts    ← identity + configurations + ack tracking
+│   │   │   ├── TransitionQueue.ts ← ordered config transition queue
+│   │   │   ├── nodeProfileCompiler.ts ← NodeSkill → NodeProfile compilation
+│   │   │   ├── PackLoader.ts      ← load skill manifests from packs/
 │   │   ├── mcp/
 │   │   │   ├── server.ts          ← MCP server (Brain connects here)
 │   │   │   ├── tools.ts           ← xentient_* MCP tools
@@ -353,7 +391,7 @@ xentient/                         ← this repo
 | Core continues if Brain disconnects | The room never bricks. L1 skills keep running. |
 | Handlers are enum-gated, not dynamic | No `eval`, no plugin loading, no arbitrary code paths. New handler = harness PR. |
 | One pack active per space | No multi-pack composition in v1 |
-| Node Skills are pushed by Core, not self-selected | Mode authority lives in Core, not in hardware |
+| Node Skills are pushed by Core, not self-selected | Configuration authority lives in Core, not in hardware |
 | Brain streams via Core, not directly to Dashboard | Core owns the observability bus. Brain is a producer, not a publisher. |
 
 ---

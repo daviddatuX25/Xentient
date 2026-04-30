@@ -52,6 +52,69 @@ The `manifest.json` is the pack's entry point. It declares what the pack contain
     "harness": ">=0.1.0",
     "hardware": ["node-base", "node-camera"]
   },
+  "configurations": [
+    {
+      "name": "classroom",
+      "displayName": "Classroom Mode",
+      "nodeAssignments": { "ceiling-unit": "study-presence", "teacher-desk": "mic-vad" },
+      "coreSkills": ["_pir-wake", "noise-gate"],
+      "brainSkills": []
+    },
+    {
+      "name": "idle",
+      "displayName": "Idle",
+      "nodeAssignments": { "ceiling-unit": "daily-life" },
+      "coreSkills": ["_pir-wake"],
+      "brainSkills": []
+    }
+  ],
+  "nodeSkills": [
+    {
+      "id": "study-presence",
+      "name": "Study Presence Monitor",
+      "version": "1.0.0",
+      "requires": { "pir": true, "bme": true },
+      "sampling": { "pirDebounceMs": 500, "bmeIntervalMs": 10000, "micMode": 0 },
+      "emits": ["presence", "env"],
+      "expectedBy": "_pir-wake",
+      "compatibleConfigs": ["classroom"],
+      "modeTask": {
+        "onEntry": "LCD:(^_^) Study",
+        "stateMachine": {
+          "initial": "monitoring",
+          "states": {
+            "monitoring": { "lcd": ["(^_^) Study", "  ready..."] },
+            "alert": { "lcd": ["(O_O) active", "  motion!"] }
+          },
+          "transitions": [
+            { "from": "monitoring", "to": "alert", "event": "presence" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "daily-life",
+      "name": "Daily Life Ambient",
+      "version": "1.0.0",
+      "requires": { "bme": true, "lcd": true },
+      "sampling": { "bmeIntervalMs": 30000, "micMode": 0 },
+      "emits": ["env"],
+      "expectedBy": "_env-monitor",
+      "compatibleConfigs": [],
+      "modeTask": { "onEntry": "LCD:(^_^) Xentient" }
+    },
+    {
+      "id": "mic-vad",
+      "name": "Microphone VAD",
+      "version": "1.0.0",
+      "requires": { "mic": true, "pir": true },
+      "sampling": { "audioRate": 16000, "audioChunkMs": 100, "vadThreshold": 1000, "micMode": 1 },
+      "emits": ["audio_chunk", "vad_triggered", "presence"],
+      "expectedBy": "noise-gate",
+      "compatibleConfigs": ["classroom"],
+      "modeTask": { "onEntry": "LCD:(O_O) listening" }
+    }
+  ],
   "entrypoint": {
     "persona": "persona.md",
     "tools": "tools.json",
@@ -66,6 +129,8 @@ The `manifest.json` is the pack's entry point. It declares what the pack contain
 - `name`: Must match the folder name. `[a-z0-9-]{1,32}` only.
 - `capabilities`: Array of strings declaring what this pack uses. Harness logs a warning if a capability is declared but the hardware doesn't support it (e.g., `node-camera` declared but no ESP32-CAM present).
 - `compatibility.harness`: Semver range. Future harness versions may reject packs that declare incompatible ranges.
+- `configurations`: Array of named configurations. Each configuration bundles `nodeAssignments` (role → NodeSkill ID), `coreSkills` (CoreSkill IDs to activate), and optional `brainSkills`. The `default` configuration is required.
+- `nodeSkills`: Array of NodeSkill definitions. These are Core-level behavioral contracts that get compiled into firmware-level NodeProfiles via `toNodeProfile()`. See `docs/NODE-SKILLS.md` for the full NodeSkill spec.
 - `entrypoint`: All paths are relative to the pack folder. No `..` traversal (see Guardrails).
 
 ---
@@ -355,6 +420,161 @@ Two packs planned for demo day (Apr 24). **Pack system code does NOT ship before
 3. LCD flashes switch animation → speaker says "Alright, what do you want?" in new voice
 4. Repeat the same user prompt → dramatic tonal contrast
 5. Narrator: "Xentient's personality lives in one folder. Swap the folder, swap the brain."
+
+---
+
+## Complete Example Pack: `classroom-companion`
+
+A fully runnable pack with 2 configurations, 2 node roles, and 1 NodeSkill per role.
+
+### Folder Structure
+
+```
+packs/classroom-companion/
+  manifest.json       # configurations + nodeSkills + entrypoint
+  persona.md          # system prompt
+  tools.json          # empty for this pack
+  voice.json          # TTS config
+```
+
+### manifest.json
+
+```json
+{
+  "v": 1,
+  "name": "classroom-companion",
+  "displayName": "Classroom Companion",
+  "author": "xentient",
+  "version": "1.0.0",
+  "description": "A classroom-aware room assistant with active teaching and idle modes.",
+
+  "capabilities": ["voice", "mqtt-tools", "memory", "lcd-faces", "sensor-triggers"],
+  "compatibility": {
+    "harness": ">=0.1.0",
+    "hardware": ["node-base"]
+  },
+
+  "configurations": [
+    {
+      "name": "classroom",
+      "displayName": "Classroom Mode",
+      "nodeAssignments": {
+        "ceiling-unit": "study-presence",
+        "teacher-desk": "mic-vad"
+      },
+      "coreSkills": ["_pir-wake", "noise-gate"],
+      "brainSkills": []
+    },
+    {
+      "name": "idle",
+      "displayName": "Idle",
+      "nodeAssignments": {
+        "ceiling-unit": "daily-life"
+      },
+      "coreSkills": ["_pir-wake"],
+      "brainSkills": []
+    }
+  ],
+
+  "nodeSkills": [
+    {
+      "id": "study-presence",
+      "name": "Study Presence Monitor",
+      "version": "1.0.0",
+      "requires": { "pir": true, "bme": true, "lcd": true },
+      "sampling": { "pirDebounceMs": 500, "bmeIntervalMs": 10000, "micMode": 0 },
+      "emits": ["presence", "env"],
+      "expectedBy": "_pir-wake",
+      "compatibleConfigs": ["classroom"],
+      "modeTask": {
+        "onEntry": "LCD:(^_^) Study",
+        "stateMachine": {
+          "initial": "monitoring",
+          "states": {
+            "monitoring": { "lcd": ["(^_^) Study", "  ready..."] },
+            "alert": { "lcd": ["(O_O) active", "  motion!"] }
+          },
+          "transitions": [
+            { "from": "monitoring", "to": "alert", "event": "presence" },
+            { "from": "alert", "to": "monitoring", "event": "env" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "daily-life",
+      "name": "Daily Life Ambient",
+      "version": "1.0.0",
+      "requires": { "bme": true, "lcd": true },
+      "sampling": { "bmeIntervalMs": 30000, "micMode": 0 },
+      "emits": ["env"],
+      "expectedBy": "_env-monitor",
+      "compatibleConfigs": [],
+      "modeTask": {
+        "onEntry": "LCD:(^_^) Xentient",
+        "stateMachine": {
+          "initial": "ambient",
+          "states": {
+            "ambient": { "lcd": ["(^_^) Xentient", "  ready..."] }
+          },
+          "transitions": []
+        }
+      }
+    },
+    {
+      "id": "mic-vad",
+      "name": "Microphone VAD",
+      "version": "1.0.0",
+      "requires": { "mic": true, "pir": true, "lcd": true },
+      "sampling": { "audioRate": 16000, "audioChunkMs": 100, "vadThreshold": 1000, "micMode": 1 },
+      "emits": ["audio_chunk", "vad_triggered", "presence"],
+      "expectedBy": "noise-gate",
+      "compatibleConfigs": ["classroom"],
+      "modeTask": {
+        "onEntry": "LCD:(O_O) listening",
+        "onExit": "LCD:(_ _) Zzz"
+      }
+    }
+  ],
+
+  "skills": [
+    {
+      "id": "_pir-wake",
+      "displayName": "PIR Wake",
+      "trigger": { "type": "event", "event": "presence" },
+      "actions": [{ "type": "activate_config", "payload": { "configName": "classroom" } }],
+      "configFilter": ["idle"],
+      "escalate": false
+    },
+    {
+      "id": "noise-gate",
+      "displayName": "Noise Gate",
+      "trigger": { "type": "event", "event": "vad_triggered" },
+      "actions": [{ "type": "log_event", "payload": { "message": "voice detected" } }],
+      "configFilter": ["classroom"],
+      "escalate": true
+    }
+  ],
+
+  "entrypoint": {
+    "persona": "persona.md",
+    "tools": "tools.json",
+    "voice": "voice.json"
+  }
+}
+```
+
+### How it works
+
+1. **Idle configuration** (default): Ceiling-unit runs `daily-life` (ambient BME readings, LCD shows "Xentient"). Teacher-desk has no assignment, so it receives the default profile and stays `dormant`.
+
+2. **PIR triggers `classroom`**: When motion is detected, `_pir-wake` fires (configFilter: `["idle"]`) and activates the `classroom` configuration via `activateConfig()`.
+
+3. **Classroom configuration**: Ceiling-unit runs `study-presence` (PIR + BME, LCD shows "Study"). Teacher-desk runs `mic-vad` (microphone with VAD-only, LCD shows "listening"). `noise-gate` CoreSkill watches for voice and escalates to Brain.
+
+4. **Brain responds**: If `noise-gate` detects voice activity, it escalates to Brain. Brain processes via STT → LLM → TTS and calls `xentient_play_audio`.
+
+5. **Back to idle**: Brain (or a scheduled CoreSkill) calls `xentient_activate_config` with `"idle"` to return to ambient mode.
 
 ---
 

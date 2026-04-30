@@ -281,9 +281,12 @@ The harness tracks `sessionId` to discard stale frames on reconnect (see HARDWAR
   "spaces": [
     {
       "id": "living-room",
-      "nodeBaseId": "node-01",
+      "nodes": [
+        { "nodeId": "node-01", "role": "ceiling-unit", "hardware": ["motion", "temperature"], "state": "running" }
+      ],
       "activePack": "family-companion",
-      "mode": "listen",
+      "activeConfig": "default",
+      "availableConfigs": ["default", "movie-night"],
       "integrations": ["hermes+mem0"],
       "online": true
     }
@@ -529,6 +532,68 @@ The `skill` field in `node_skill_set` follows the NodeSkill type defined in `doc
 - `expectedBy`: Must reference an active CoreSkill. Core validates before push.
 - `requires`: Checked against Node Base hardware before push. Mismatch = `skill_mismatch` event + fallback.
 
+### NodeProfileSet (Core → Node)
+
+When a configuration is activated, Core compiles the assigned NodeSkill into a firmware-ready `NodeProfile` and pushes it via MQTT. This is the compiled binary payload (as opposed to the human-readable NodeSkill).
+
+Topic: `xentient/node/{nodeId}/profile/set`
+
+```json
+{
+  "v": 1,
+  "type": "node_profile_set",
+  "profileId": "study-presence-v1",
+  "profile": {
+    "micMode": 1,
+    "pirDebounceMs": 500,
+    "bmeIntervalMs": 10000,
+    "cameraIntervalMs": 0,
+    "eventMask": 11,
+    "lcdLines": ["(^_^) Study", "  ready..."]
+  }
+}
+```
+
+**Key fields:**
+- `micMode`: 0 = off, 1 = vad-only, 2 = always-on
+- `eventMask`: Bitmask of enabled event types (see `EVENT_MASK_BITS` in contracts.ts)
+- `lcdLines`: LCD display strings for the node's current state
+
+### NodeProfileAck (Node → Core)
+
+Firmware acknowledges profile receipt. If Core doesn't receive this within 5 seconds, it marks the node `dormant` and emits a `xentient/node_offline` notification.
+
+Topic: `xentient/node/{nodeId}/profile/ack`
+
+```json
+{
+  "v": 1,
+  "type": "node_profile_ack",
+  "profileId": "study-presence-v1",
+  "status": "loaded",
+  "error": null
+}
+```
+
+Error response:
+
+```json
+{
+  "v": 1,
+  "type": "node_profile_ack",
+  "profileId": "study-presence-v1",
+  "status": "error",
+  "error": "Missing hardware: camera not available on this node"
+}
+```
+
+**Ack timeout behavior:** If no ack arrives within 5 seconds, Core:
+1. Marks the node as `dormant` in `SpaceManager`
+2. Emits `xentient/node_offline` MCP notification with `{ nodeId, reason: "ack_timeout" }`
+3. Does NOT revert the configuration transition — Core has already transitioned, the node catches up when it reconnects
+
+**Reconnect replay:** On MQTT reconnect, Core calls `onMqttReconnect()` which re-enqueues the active configuration for all spaces, ensuring firmware stuck on `DEFAULT_PROFILE` after a broker restart receives the correct profile.
+
 ---
 
 ## Node Event Type Enum
@@ -631,7 +696,7 @@ interface EscalationPayload {
   escalation_id: string        // unique per escalation, used to group Brain Feed events
   skill_id: string             // the CoreSkill that triggered this escalation
   space_id: string             // which Space this escalation belongs to
-  mode: SpaceMode              // current mode at time of escalation
+  mode: CoreNodeState           // current node state at time of escalation (dormant/running)
   timestamp: number            // epoch-millis uint32
   audio?: string               // base64-encoded PCM audio (S16LE, 16kHz, mono)
   sensor_snapshot?: SensorSnapshot

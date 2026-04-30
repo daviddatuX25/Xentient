@@ -66,7 +66,7 @@ interface CoreSkill {
   actions: CoreAction[]              // what happens when it fires
   escalate: boolean                  // whether to notify Brain
   conflictGroup?: string             // mutual exclusion group
-  modeFilter?: string[]              // only fire in these behavioral modes
+  configFilter?: string[]              // only fire in these configurations
   cooldownMs?: number                // minimum time between fires
   dataCollectors?: DataCollector[]   // accumulate data before firing
 }
@@ -74,11 +74,11 @@ interface CoreSkill {
 type TriggerCondition =
   | { type: 'event'; event: string }
   | { type: 'cron'; expression: string }
-  | { type: 'mode'; from?: SpaceMode; to: SpaceMode }
+  | { type: 'mode'; from?: CoreNodeState; to: CoreNodeState }
   | { type: 'composite'; all: TriggerCondition[] }
 
 interface CoreAction {
-  type: 'set_mode' | 'play_audio' | 'push_lcd' | 'log_event' | 'custom'
+  type: 'activate_config' | 'play_audio' | 'push_lcd' | 'log_event' | 'custom'
   payload: Record<string, unknown>
 }
 
@@ -96,20 +96,30 @@ interface DataCollector {
 
 **Key constraint:** CoreSkills always run, even when Brain is offline. If `escalate: true` and no Brain is connected, the escalation is logged but not acted upon.
 
+### Configurations
+
+A **Configuration** bundles NodeSkill assignments per role + CoreSkills + optional transition rules. It replaces the older "mode" concept (activeMode/SpaceMode/BehavioralMode).
+
+- Configurations live in the pack manifest and are activated by name (e.g., `idle`, `classroom`, `study`).
+- `configFilter` on a CoreSkill determines which configurations the skill is active in. A skill with no `configFilter` is active in all configurations.
+- When a configuration activates, Core compiles `NodeProfile` per role from the configuration's NodeSkill assignments and pushes them to nodes via MQTT.
+- The `activate_config` action type transitions the system between configurations at runtime.
+- Only one configuration is active at a time per space. Transitions are managed by the `TransitionQueue` for ordered, non-overlapping handoffs.
+
 ### Trigger Types
 
 | Type | Description | Example |
 |------|-------------|---------|
 | `event` | Fire when a named event is emitted | `motion` from PIR |
 | `cron` | Fire on schedule | Every hour at :00 |
-| `mode` | Fire on mode transition | sleep → listen |
+| `mode` | Fire on node state transition | dormant → running |
 | `composite` | Fire when ALL sub-triggers are met | motion AND env.temp > 30 |
 
 ### Action Types
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `set_mode` | Change SpaceMode | listen → active |
+| `activate_config` | Activate a named configuration | idle → classroom |
 | `play_audio` | Queue audio for playback | Alert chime |
 | `push_lcd` | Update LCD display | Show temperature |
 | `log_event` | Emit custom event to SSE | skill_fired, skill_conflict |
@@ -151,7 +161,7 @@ await client.callTool("xentient_register_skill", {
     trigger: { type: "event", event: "vad_triggered" },
     actions: [],  // Brain handles actions itself, not Core
     escalate: true,
-    modeFilter: ["listen", "active"]
+    configFilter: ["classroom", "study"]
   }
 });
 ```
@@ -225,12 +235,12 @@ This is what Hermes's `skill-improver` meta-skill does. Xentient is the platform
 |---------|--------------|---------------|----------------|
 | **Where** | ESP32 firmware | Core process | Brain process |
 | **Created by** | Core push | Pack manifest or Brain MCP | Brain MCP |
-| **Trigger** | Sensor events, timers | Event/cron/mode/composite | Escalation from Core |
-| **Actions** | Change sampling, emit events | Set mode, play audio, push LCD | Any xentient_* tool + external APIs |
+| **Trigger** | Sensor events, timers | Event/cron/state/composite | Escalation from Core |
+| **Actions** | Change sampling, emit events | Activate config, play audio, push LCD | Any xentient_* tool + external APIs |
 | **Can call network** | No | No | Yes |
 | **Can call LLM** | No | No | Yes |
 | **Latency** | <1ms (firmware) | <1ms (Core tick) | Variable (LLM) |
 | **Runs without Brain** | Yes | Yes | No |
 | **Paired with** | A CoreSkill (`expectedBy`) | May pair with Node Skill | May pair with CoreSkill escalation |
-| **Persistence** | MQTT push per mode change | Pack manifest or var/skills.json | var/skills.json |
+| **Persistence** | MQTT push per configuration change | Pack manifest or var/skills.json | var/skills.json |
 | **Failure mode** | Fallback to default config | Log error, continue | Escalation logged, no action |

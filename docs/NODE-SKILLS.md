@@ -40,6 +40,7 @@ interface NodeSkill {
     pirDebounceMs?: number            // PIR event debounce, default 1000
     cameraIntervalMs?: number         // frame interval, default 3000
     vadThreshold?: number             // RMS threshold for voice activity
+    micMode?: 0 | 1 | 2              // 0=off, 1=vad-only, 2=always-on
   }
 
   // Event emission — what this Node Skill sends to Core
@@ -47,6 +48,9 @@ interface NodeSkill {
 
   // Pairing — which CoreSkill handles this Node Skill's output
   expectedBy: string                  // CoreSkill ID that interprets the events
+
+  // Configuration compatibility — which configurations can use this NodeSkill
+  compatibleConfigs: string[]         // empty array = compatible with all configs
 
   // Mode task configuration
   modeTask: {
@@ -101,9 +105,104 @@ If a Node Skill's `expectedBy` CoreSkill is not active, Core refuses to push the
 
 ---
 
+## NodeSkill → NodeProfile Compilation
+
+NodeSkill is the **Core-level** definition (human-readable, lives in pack manifests). NodeProfile is the **firmware-level** compiled payload (binary-optimized, pushed over MQTT).
+
+```
+NodeSkill (pack manifest)  →  toNodeProfile(nodeSkill, node)  →  NodeProfile (MQTT payload)
+```
+
+The `toNodeProfile()` function in `engine/nodeProfileCompiler.ts` compiles a NodeSkill into a NodeProfile by:
+
+1. **Hardware check:** Verifies the node has all hardware declared in `requires`. Returns `null` on mismatch.
+2. **Event mask compilation:** Maps each string in `emits` to a bit in `EVENT_MASK_BITS`. Unknown types produce a warning log and are skipped (zero contribution to the bitmask).
+3. **micMode validation:** If `micMode: 2` (always-on), ensures the node has `audio` hardware.
+4. **LCD string extraction:** Takes `onEntry` and `lcd` fields from the `modeTask` section.
+
+**The compiled NodeProfile shape:**
+
+```typescript
+interface NodeProfile {
+  micMode: 0 | 1 | 2            // 0=off, 1=vad-only, 2=always-on
+  pirDebounceMs: number
+  bmeIntervalMs: number
+  cameraIntervalMs: number
+  eventMask: number               // bitmask of enabled event types
+  lcdLines: [string, string]      // LCD display lines
+}
+```
+
+---
+
+## `micMode` Field
+
+The `sampling.micMode` field controls microphone behavior on the Node Base:
+
+| Value | Name | Behavior |
+|-------|------|----------|
+| `0` | Off | Microphone is disabled. No audio chunks or VAD events are emitted. |
+| `1` | VAD-only | Microphone is active but only sends `vad_triggered` events when voice activity exceeds `vadThreshold`. No raw audio chunks. |
+| `2` | Always-on | Microphone is fully active. Both `vad_triggered` and `audio_chunk` events are emitted continuously. |
+
+**Default:** `0` (off). If `micMode` is omitted, the microphone is disabled.
+
+**Constraint:** `micMode: 2` requires `requires.mic: true` AND the node must have `audio` hardware. Compilation returns `null` on mismatch.
+
+---
+
+## `compatibleConfigs` Field
+
+The `compatibleConfigs` field declares which configurations this NodeSkill is designed for. This is used for validation and documentation — not enforcement at runtime.
+
+- **Empty array `[]`**: Compatible with all configurations (default).
+- **Specific configs `["classroom", "study"]`**: This NodeSkill is designed for the listed configurations.
+
+At runtime, `SpaceManager` uses `nodeAssignments` from the active configuration to determine which NodeSkill to compile for each node role. The `compatibleConfigs` field is informational for Brain tooling (e.g., `xentient_get_capabilities` shows which NodeSkills are compatible with the active configuration).
+
+---
+
 ## MQTT Push Flow
 
-### Core → Node: Skill Assignment
+### Core → Node: Profile Assignment (compiled NodeProfile)
+
+When a configuration is activated, Core compiles the assigned NodeSkill into a NodeProfile and pushes it:
+
+Topic: `xentient/node/{nodeId}/profile/set`
+
+```json
+{
+  "v": 1,
+  "type": "node_profile_set",
+  "profileId": "study-presence-v1",
+  "profile": {
+    "micMode": 1,
+    "pirDebounceMs": 500,
+    "bmeIntervalMs": 10000,
+    "cameraIntervalMs": 0,
+    "eventMask": 11,
+    "lcdLines": ["(^_^) Study", "  ready..."]
+  }
+}
+```
+
+### Node → Core: Profile Acknowledgment
+
+Topic: `xentient/node/{nodeId}/profile/ack`
+
+```json
+{
+  "v": 1,
+  "type": "node_profile_ack",
+  "profileId": "study-presence-v1",
+  "status": "loaded",
+  "error": null
+}
+```
+
+If Core does not receive an ack within 5 seconds, it marks the node `dormant` and emits `xentient/node_offline`.
+
+### Core → Node: Skill Assignment (legacy, pre-compilation)
 
 Topic: `xentient/node/{nodeId}/skill/set`
 
