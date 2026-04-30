@@ -102,6 +102,30 @@ bool provisioning_start_portal(const char* provisioningJson) {
     // (WiFiManager doesn't support programmatic pre-fill of custom params,
     //  so we parse after portal saves)
 
+    // Client-side JSON validation in portal
+    const char* jsonValidateScript = R"(
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var jsonField = document.getElementById('prov_json');
+  var form = jsonField ? jsonField.closest('form') : null;
+  if (form && jsonField) {
+    form.addEventListener('submit', function(e) {
+      var val = jsonField.value.trim();
+      if (val.length > 0) {
+        try { JSON.parse(val); }
+        catch(err) {
+          e.preventDefault();
+          alert('Provisioning JSON parse error: ' + err.message + '\nPlease fix the JSON or clear the field to use manual entries.');
+          return false;
+        }
+      }
+    });
+  }
+});
+</script>
+)";
+    wm.setCustomHeadElement(jsonValidateScript);
+
     bool connected = wm.autoConnect("Xentient-Setup");
     if (!connected) {
         Serial.println("[PROV] Portal timeout — no config saved");
@@ -114,6 +138,10 @@ bool provisioning_start_portal(const char* provisioningJson) {
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, provJson);
         if (!err) {
+            // Validate required fields
+            if (!doc["mqttBroker"].is<const char*>() && !doc["nodeId"].is<const char*>()) {
+                Serial.println("[PROV] JSON missing required fields (mqttBroker, nodeId) — saving what we have");
+            }
             Preferences prefs;
             prefs.begin(NVS_NAMESPACE, false);
             // WiFi creds handled by WiFiManager, not NVS
