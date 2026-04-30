@@ -1,3 +1,14 @@
+/**
+ * @deprecated — CUTOVER GATE in CONTEXT.md.
+ * Current responsibilities that brain-basic must cover before deletion:
+ *   - STT (Whisper) with timeout + error handling
+ *   - LLM routing with context injection
+ *   - TTS with provider fallback
+ *   - xentient_play_audio result validation
+ *   - Escalation ID correlation across the full chain
+ * Do NOT delete until all five are proven via brain-basic.
+ * Do NOT add new features to this module.
+ */
 import { EventEmitter } from 'events';
 import pino from 'pino';
 import { MqttClient } from '../comms/MqttClient';
