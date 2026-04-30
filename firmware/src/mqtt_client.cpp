@@ -202,9 +202,11 @@ void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId) 
     strncpy(mqttBrokerHost, brokerHost, sizeof(mqttBrokerHost) - 1);
     mqttBrokerHost[sizeof(mqttBrokerHost) - 1] = '\0';
     mqttBrokerPort = brokerPort;
-    if (nodeId) {
+    if (nodeId && nodeId[0] != '\0') {
         strncpy(runtimeNodeId, nodeId, sizeof(runtimeNodeId) - 1);
         runtimeNodeId[sizeof(runtimeNodeId) - 1] = '\0';
+    } else if (nodeId && nodeId[0] == '\0') {
+        Serial.printf("[MQTT] Warning: empty nodeId, falling back to " NODE_BASE_ID "\n");
     }
     // Resolve nodeId-dependent topics at runtime
     buildNodeTopic(runtimeNodeId, TOPIC_NODE_PROFILE_SET_SUFFIX, resolvedTopicProfileSet, sizeof(resolvedTopicProfileSet));
