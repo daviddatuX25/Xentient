@@ -5,9 +5,36 @@
 
 #include "provisioning.h"
 
-static Preferences prefs;
+namespace {
+// NVS namespace and key constants — file-local to avoid ODR violations (H1)
+constexpr const char* NVS_NAMESPACE     = "xentient";
+constexpr const char* NVS_KEY_WIFI_SSID = "wifi_ssid";
+constexpr const char* NVS_KEY_WIFI_PASS = "wifi_pass";
+constexpr const char* NVS_KEY_MQTT_HOST = "mqtt_host";
+constexpr const char* NVS_KEY_MQTT_PORT = "mqtt_port";
+constexpr const char* NVS_KEY_NODE_ID   = "node_id";
+constexpr const char* NVS_KEY_SPACE_ID  = "space_id";
+constexpr const char* NVS_KEY_WS_HOST   = "ws_host";
+constexpr const char* NVS_KEY_WS_PORT   = "ws_port";
+
+// Factory-reset button constants (L2)
+constexpr uint8_t  FACTORY_RESET_HOLD_TICKS = 30;
+constexpr uint16_t FACTORY_RESET_TICK_MS    = 100;  // 30 * 100ms = 3s
+
+// H2: safeStrncpy guarantees null-termination regardless of source length
+void safeStrncpy(char* dst, const char* src, size_t n) {
+    if (n == 0) return;
+    strncpy(dst, src, n - 1);
+    dst[n - 1] = '\0';
+}
+} // namespace
 
 bool provisioning_has_config() {
+    // Only checks the 4 keys required for basic connectivity (WiFi SSID,
+    // WiFi password, MQTT host, Node ID). The remaining 4 keys (MQTT port,
+    // Space ID, WS host, WS port) have compile-time defaults in
+    // provisioning_read_config(), so they are not gating. (L3)
+    Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true); // read-only
     bool has = prefs.isKey(NVS_KEY_WIFI_SSID) && prefs.isKey(NVS_KEY_WIFI_PASS)
             && prefs.isKey(NVS_KEY_MQTT_HOST) && prefs.isKey(NVS_KEY_NODE_ID);
@@ -18,28 +45,29 @@ bool provisioning_has_config() {
 ProvisioningConfig provisioning_read_config() {
     ProvisioningConfig cfg = {};
     // Compile-time defaults from build_flags (fallback)
-    strncpy(cfg.mqttHost, MQTT_BROKER_ADDR, sizeof(cfg.mqttHost) - 1);
+    safeStrncpy(cfg.mqttHost, MQTT_BROKER_ADDR, sizeof(cfg.mqttHost));
     cfg.mqttPort = MQTT_BROKER_PORT;
-    strncpy(cfg.nodeId, NODE_BASE_ID, sizeof(cfg.nodeId) - 1);
-    strncpy(cfg.spaceId, SPACE_ID, sizeof(cfg.spaceId) - 1);
-    strncpy(cfg.wsHost, WS_HARNESS_HOST, sizeof(cfg.wsHost) - 1);
+    safeStrncpy(cfg.nodeId, NODE_BASE_ID, sizeof(cfg.nodeId));
+    safeStrncpy(cfg.spaceId, SPACE_ID, sizeof(cfg.spaceId));
+    safeStrncpy(cfg.wsHost, WS_HARNESS_HOST, sizeof(cfg.wsHost));
     cfg.wsPort = WS_HARNESS_PORT;
 
+    Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true);
     if (prefs.isKey(NVS_KEY_WIFI_SSID))
-        strncpy(cfg.wifiSsid, prefs.getString(NVS_KEY_WIFI_SSID).c_str(), sizeof(cfg.wifiSsid) - 1);
+        safeStrncpy(cfg.wifiSsid, prefs.getString(NVS_KEY_WIFI_SSID).c_str(), sizeof(cfg.wifiSsid));
     if (prefs.isKey(NVS_KEY_WIFI_PASS))
-        strncpy(cfg.wifiPass, prefs.getString(NVS_KEY_WIFI_PASS).c_str(), sizeof(cfg.wifiPass) - 1);
+        safeStrncpy(cfg.wifiPass, prefs.getString(NVS_KEY_WIFI_PASS).c_str(), sizeof(cfg.wifiPass));
     if (prefs.isKey(NVS_KEY_MQTT_HOST))
-        strncpy(cfg.mqttHost, prefs.getString(NVS_KEY_MQTT_HOST).c_str(), sizeof(cfg.mqttHost) - 1);
+        safeStrncpy(cfg.mqttHost, prefs.getString(NVS_KEY_MQTT_HOST).c_str(), sizeof(cfg.mqttHost));
     if (prefs.isKey(NVS_KEY_MQTT_PORT))
         cfg.mqttPort = prefs.getUShort(NVS_KEY_MQTT_PORT, cfg.mqttPort);
     if (prefs.isKey(NVS_KEY_NODE_ID))
-        strncpy(cfg.nodeId, prefs.getString(NVS_KEY_NODE_ID).c_str(), sizeof(cfg.nodeId) - 1);
+        safeStrncpy(cfg.nodeId, prefs.getString(NVS_KEY_NODE_ID).c_str(), sizeof(cfg.nodeId));
     if (prefs.isKey(NVS_KEY_SPACE_ID))
-        strncpy(cfg.spaceId, prefs.getString(NVS_KEY_SPACE_ID).c_str(), sizeof(cfg.spaceId) - 1);
+        safeStrncpy(cfg.spaceId, prefs.getString(NVS_KEY_SPACE_ID).c_str(), sizeof(cfg.spaceId));
     if (prefs.isKey(NVS_KEY_WS_HOST))
-        strncpy(cfg.wsHost, prefs.getString(NVS_KEY_WS_HOST).c_str(), sizeof(cfg.wsHost) - 1);
+        safeStrncpy(cfg.wsHost, prefs.getString(NVS_KEY_WS_HOST).c_str(), sizeof(cfg.wsHost));
     if (prefs.isKey(NVS_KEY_WS_PORT))
         cfg.wsPort = prefs.getUShort(NVS_KEY_WS_PORT, cfg.wsPort);
     prefs.end();
@@ -47,6 +75,9 @@ ProvisioningConfig provisioning_read_config() {
 }
 
 bool provisioning_start_portal(const char* provisioningJson) {
+    // TODO: Programmatic JSON input — auto-fill portal fields from provisioningJson parameter
+    // Currently JSON paste is only via the WiFiManager form field (prov_json)
+
     WiFiManager wm;
     wm.setConfigPortalTimeout(180); // 3 min timeout
 
@@ -89,6 +120,7 @@ bool provisioning_start_portal(const char* provisioningJson) {
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, provJson);
         if (!err) {
+            Preferences prefs;
             prefs.begin(NVS_NAMESPACE, false);
             if (doc["wifiSsid"].is<const char*>())
                 prefs.putString(NVS_KEY_WIFI_SSID, doc["wifiSsid"].as<const char*>());
@@ -115,6 +147,7 @@ bool provisioning_start_portal(const char* provisioningJson) {
     }
 
     // Fallback: save individual fields
+    Preferences prefs;
     prefs.begin(NVS_NAMESPACE, false);
     prefs.putString(NVS_KEY_WIFI_SSID, p_ssid.getValue());
     prefs.putString(NVS_KEY_WIFI_PASS, p_pass.getValue());
@@ -131,8 +164,16 @@ bool provisioning_start_portal(const char* provisioningJson) {
 }
 
 void provisioning_clear() {
+    Preferences prefs;
     prefs.begin(NVS_NAMESPACE, false);
-    prefs.clear();
+    prefs.remove(NVS_KEY_WIFI_SSID);
+    prefs.remove(NVS_KEY_WIFI_PASS);
+    prefs.remove(NVS_KEY_MQTT_HOST);
+    prefs.remove(NVS_KEY_MQTT_PORT);
+    prefs.remove(NVS_KEY_NODE_ID);
+    prefs.remove(NVS_KEY_SPACE_ID);
+    prefs.remove(NVS_KEY_WS_HOST);
+    prefs.remove(NVS_KEY_WS_PORT);
     prefs.end();
     Serial.println("[PROV] NVS config cleared (factory reset)");
 }
@@ -143,11 +184,11 @@ bool provisioning_check_factory_reset() {
     if (digitalRead(0) == LOW) {
         Serial.println("[PROV] BOOT button held — waiting 3s for factory reset...");
         uint8_t held = 0;
-        while (digitalRead(0) == LOW && held < 30) {
-            delay(100);
+        while (digitalRead(0) == LOW && held < FACTORY_RESET_HOLD_TICKS) {
+            delay(FACTORY_RESET_TICK_MS);
             held++;
         }
-        if (held >= 30) { // 3 seconds
+        if (held >= FACTORY_RESET_HOLD_TICKS) {
             provisioning_clear();
             Serial.println("[PROV] Factory reset triggered — restarting");
             return true;

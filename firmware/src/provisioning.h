@@ -1,17 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// NVS namespace and key constants
-static constexpr const char* NVS_NAMESPACE     = "xentient";
-static constexpr const char* NVS_KEY_WIFI_SSID = "wifi_ssid";
-static constexpr const char* NVS_KEY_WIFI_PASS = "wifi_pass";
-static constexpr const char* NVS_KEY_MQTT_HOST = "mqtt_host";
-static constexpr const char* NVS_KEY_MQTT_PORT = "mqtt_port";
-static constexpr const char* NVS_KEY_NODE_ID   = "node_id";
-static constexpr const char* NVS_KEY_SPACE_ID  = "space_id";
-static constexpr const char* NVS_KEY_WS_HOST   = "ws_host";
-static constexpr const char* NVS_KEY_WS_PORT   = "ws_port";
-
 struct ProvisioningConfig {
     char wifiSsid[33];
     char wifiPass[64];
