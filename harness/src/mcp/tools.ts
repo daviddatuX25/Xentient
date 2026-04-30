@@ -2,12 +2,14 @@
 import type { MqttClient } from "../comms/MqttClient";
 import type { AudioServer } from "../comms/AudioServer";
 import type { CameraServer } from "../comms/CameraServer";
+import type { ControlServer } from "../comms/ControlServer";
 import type { EventBridge } from "../comms/EventBridge";
 import type { ModeManager } from "../engine/ModeManager";
 import type { SpaceManager } from "../engine/SpaceManager";
 import type { PackLoader } from "../engine/PackLoader";
-import type { SensorCache, CoreSkill } from "../shared/types"; // RF-5: moved from here to shared to avoid comms↔mcp circular dep
-import type { Mode } from "../shared/contracts";
+import type { EventSubscriptionManager } from "../engine/EventSubscriptionManager";
+import type { SensorCache, CoreSkill, BrainStreamEvent, BrainStreamSubtype, Configuration } from "../shared/types"; // RF-5: moved from here to shared to avoid comms↔mcp circular dep
+import { type Mode, EVENT_MASK_BITS } from "../shared/contracts";
 import pino from "pino";
 
 const logger = pino({ name: "mcp-tools" }, process.stderr); // RF-2: stderr for MCP stdio safety
@@ -21,6 +23,8 @@ export interface McpToolDeps {
   spaceManager?: SpaceManager; // SKILL TOOLS: wired in Wave 4 (core.ts)
   eventBridge?: EventBridge; // EVENT BRIDGE TOOLS: wired in core.ts
   packLoader?: PackLoader; // PACK TOOLS: wired in core.ts
+  controlServer?: ControlServer; // BRAIN STREAM: wired in core.ts
+  eventSubscriptionManager?: EventSubscriptionManager; // EVENT SUBSCRIPTION: Sprint 4
 }
 
 // NOTE: SensorCache interface is defined in src/shared/types.ts (Task 0.5) — do NOT redefine here
@@ -192,12 +196,6 @@ export function createToolHandlers(deps: McpToolDeps) {
       return { content: [{ type: 'text' as const, text: JSON.stringify(entries, null, 2) }] };
     },
 
-    xentient_switch_mode: async ({ spaceId, mode }: { spaceId: string; mode: string }) => {
-      if (!deps.spaceManager) return { content: [{ type: 'text' as const, text: 'SpaceManager not initialized' }], isError: true as const };
-      const ok = deps.spaceManager.activateConfig(spaceId, mode);
-      return { content: [{ type: 'text' as const, text: ok ? `Space ${spaceId} activated config "${mode}"` : `Space ${spaceId} not found` }] };
-    },
-
     xentient_activate_config: async ({ spaceId, config }: { spaceId: string; config: string }) => {
       if (!deps.spaceManager) return { content: [{ type: 'text' as const, text: 'SpaceManager not initialized' }], isError: true as const };
       const ok = deps.spaceManager.activateConfig(spaceId, config);
@@ -300,6 +298,235 @@ export function createToolHandlers(deps: McpToolDeps) {
         const message = err instanceof Error ? err.message : String(err);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: message }) }], isError: true as const };
       }
+    },
+
+    // ============================================================
+    // CONFIG REGISTRATION TOOL — Sprint 5
+    // Brain can author new configurations at runtime
+    // ============================================================
+
+    xentient_register_config: async ({ name, displayName, nodeAssignments, coreSkills, transitions }: {
+      name: string;
+      displayName: string;
+      nodeAssignments?: Record<string, string>;
+      coreSkills: string[];
+      transitions?: Record<string, unknown>;
+    }) => {
+      if (!deps.packLoader) return { content: [{ type: 'text' as const, text: 'PackLoader not initialized' }], isError: true as const };
+      if (!deps.spaceManager) return { content: [{ type: 'text' as const, text: 'SpaceManager not initialized' }], isError: true as const };
+
+      // Validate nodeSkill IDs if specified
+      if (nodeAssignments) {
+        const manifest = deps.packLoader.getLoadedPackManifest();
+        if (manifest) {
+          for (const [role, skillId] of Object.entries(nodeAssignments)) {
+            const found = manifest.nodeSkills.find(ns => ns.id === skillId);
+            if (!found) {
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: `NodeSkill "${skillId}" not found in pack (assigned to role "${role}")` }) }],
+                isError: true as const,
+              };
+            }
+          }
+        }
+      }
+
+      const config: Configuration = {
+        name,
+        displayName,
+        nodeAssignments: nodeAssignments ?? {},
+        coreSkills,
+        brainSkills: [], // v1: empty
+        ...(transitions ? { transitions: transitions as any } : {}),
+      };
+
+      deps.packLoader.registerConfig(config);
+
+      // Add to space availableConfigs
+      const spaceId = 'default'; // v1: single space
+      const space = deps.spaceManager.getSpace(spaceId);
+      if (space) {
+        space.availableConfigs.push(config.name);
+      }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ registered: true, configName: config.name }) }] };
+    },
+
+    // ============================================================
+    // BRAIN STREAM TOOL — Sprint 6
+    // Brain pushes reasoning tokens back to Core's SSE bus
+    // ============================================================
+
+    xentient_brain_stream: async ({ escalation_id, subtype, payload }: {
+      escalation_id: string;
+      subtype: string;
+      payload?: Record<string, unknown>;
+    }) => {
+      const validSubtypes: BrainStreamSubtype[] = [
+        'escalation_received', 'reasoning_token', 'tool_call_fired',
+        'tool_call_result', 'tts_queued', 'escalation_complete',
+      ];
+      if (!validSubtypes.includes(subtype as BrainStreamSubtype)) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: `Invalid subtype "${subtype}"` }) }],
+          isError: true as const,
+        };
+      }
+      const event: BrainStreamEvent = {
+        type: 'brain_event',
+        source: 'brain',
+        escalation_id,
+        subtype: subtype as BrainStreamSubtype,
+        payload: payload ?? {},
+        timestamp: Date.now(),
+      };
+      deps.controlServer?.broadcastSSE(event);
+      if (subtype === 'escalation_complete' && deps.spaceManager) {
+        deps.spaceManager.closeEscalation(escalation_id);
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ relayed: true }) }] };
+    },
+
+    // ============================================================
+    // CAPABILITY DISCOVERY TOOLS — Sprint 3
+    // Brain calls these on connect and after config changes
+    // ============================================================
+
+    xentient_get_capabilities: async ({ spaceId }: { spaceId?: string }) => {
+      const targetSpaceId = spaceId ?? 'default';
+      const space = deps.spaceManager?.getSpace(targetSpaceId);
+      const executor = deps.spaceManager?.getExecutor(targetSpaceId);
+      const pack = deps.packLoader?.getLoadedPackManifest();
+      const config = pack?.configurations.find(c => c.name === space?.activeConfig);
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            nodes: space?.nodes.map(node => ({
+              nodeId: node.nodeId,
+              role: node.role,
+              hardware: node.hardware,
+              state: node.state,
+              activeProfile: config?.nodeAssignments?.[node.role] ?? null,
+              eventMask: pack?.nodeSkills?.find(ns => ns.id === config?.nodeAssignments?.[node.role])?.emits ?? [],
+            })) ?? [],
+            core: {
+              activePack: space?.activePack ?? pack?.pack.name ?? '',
+              activeConfig: space?.activeConfig ?? 'default',
+              availableConfigs: pack?.configurations.map(c => c.name) ?? [],
+              activeSkills: executor?.listSkills(targetSpaceId).filter(s => s.enabled).map(s => s.id) ?? [],
+              availableActions: ['set_lcd', 'play_chime', 'set_mode', 'mqtt_publish', 'increment_counter', 'log'],
+            },
+            space: {
+              id: targetSpaceId,
+              integrations: space?.integrations.map(i => i.type) ?? [],
+              permissions: [], // v1: empty, authorization not yet implemented
+            },
+          }),
+        }],
+      };
+    },
+
+    xentient_get_skill_schema: async ({ skillType }: { skillType: string }) => {
+      switch (skillType) {
+        case 'CoreSkill':
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                fields: {
+                  id: { type: 'string', required: true, pattern: '^[a-z0-9_-]{1,64}$' },
+                  displayName: { type: 'string', required: true, maxLength: 64 },
+                  enabled: { type: 'boolean', default: true },
+                  spaceId: { type: 'string', default: 'default' },
+                  configFilter: { type: 'string', description: 'Config name or "*" for all' },
+                  trigger: { type: 'SkillTrigger', required: true },
+                  actions: { type: 'CoreAction[]', required: true },
+                  collect: { type: 'DataCollector[]' },
+                  escalation: { type: 'EscalationConfig' },
+                  priority: { type: 'number', min: 0, max: 100, default: 50 },
+                  cooldownMs: { type: 'number', min: 0, default: 0 },
+                },
+                triggerTypes: ['cron', 'interval', 'mode', 'sensor', 'event', 'internal', 'composite'],
+                actionTypes: ['set_lcd', 'play_chime', 'set_mode', 'mqtt_publish', 'increment_counter', 'log'],
+              }),
+            }],
+          };
+        case 'NodeSkill':
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                fields: {
+                  id: { type: 'string', required: true },
+                  name: { type: 'string', required: true },
+                  version: { type: 'string', required: true },
+                  requires: { type: 'object', properties: ['pir', 'mic', 'bme', 'camera', 'lcd'] },
+                  sampling: { type: 'object', properties: ['audioRate', 'audioChunkMs', 'bmeIntervalMs', 'pirDebounceMs', 'micMode', 'cameraMode', 'vadThreshold'] },
+                  emits: { type: 'string[]', required: true },
+                  expectedBy: { type: 'string', required: true },
+                  compatibleConfigs: { type: 'string[]', required: true },
+                },
+                eventTypes: Object.keys(EVENT_MASK_BITS).map(k => k.toLowerCase()),
+                hardwareRequirements: ['pir', 'mic', 'camera', 'bme', 'lcd'],
+              }),
+            }],
+          };
+        case 'Configuration':
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                fields: {
+                  name: { type: 'string', required: true, pattern: '^[a-z0-9-]{1,32}$' },
+                  displayName: { type: 'string', required: true, maxLength: 64 },
+                  nodeAssignments: { type: 'Record<string, string>', description: 'nodeRole -> NodeSkill ID' },
+                  coreSkills: { type: 'string[]', required: true },
+                  brainSkills: { type: 'string[]' },
+                  transitions: { type: 'ConfigTransitions' },
+                },
+                example: {
+                  name: 'deep-focus',
+                  displayName: 'Deep Focus',
+                  nodeAssignments: { 'ceiling-unit': 'daily-life' },
+                  coreSkills: ['env-logger'],
+                },
+              }),
+            }],
+          };
+        default:
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ error: `Unknown skillType "${skillType}"` }) }],
+            isError: true as const,
+          };
+      }
+    },
+
+    // ============================================================
+    // EVENT SUBSCRIPTION TOOLS — Sprint 4
+    // Brain subscribes to filtered, rate-limited event streams
+    // ============================================================
+
+    xentient_subscribe_events: async ({ eventTypes, maxRateMs }: { eventTypes: string[]; maxRateMs: number }) => {
+      if (!deps.eventSubscriptionManager) return { content: [{ type: 'text' as const, text: 'EventSubscriptionManager not initialized' }], isError: true as const };
+      const { randomUUID } = await import('crypto');
+      const subscriptionId = randomUUID();
+      deps.eventSubscriptionManager.subscribe({
+        id: subscriptionId,
+        eventTypes,
+        maxRateMs,
+        buffer: [],
+        lastFlushAt: 0,
+        flushTimer: null,
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ subscriptionId, eventTypes, maxRateMs }) }] };
+    },
+
+    xentient_unsubscribe_events: async ({ subscriptionId }: { subscriptionId: string }) => {
+      if (!deps.eventSubscriptionManager) return { content: [{ type: 'text' as const, text: 'EventSubscriptionManager not initialized' }], isError: true as const };
+      const removed = deps.eventSubscriptionManager.unsubscribe(subscriptionId);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ removed }) }] };
     },
   };
 }

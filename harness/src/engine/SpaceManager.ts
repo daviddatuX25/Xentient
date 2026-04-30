@@ -366,7 +366,13 @@ export class SpaceManager extends EventEmitter {
     for (const [, ex] of this.executors) ex.stop();
   }
 
-  private getExecutor(spaceId: string): SkillExecutor | undefined {
+  /** Retrieve a Space by ID. Returns undefined if not found. */
+  getSpace(spaceId: string): Space | undefined {
+    return this.spaces.get(spaceId);
+  }
+
+  /** Retrieve a SkillExecutor by space ID. Returns undefined if not found. */
+  getExecutor(spaceId: string): SkillExecutor | undefined {
     const ex = this.executors.get(spaceId);
     if (!ex) logger.warn({ spaceId }, 'No executor for space');
     return ex;

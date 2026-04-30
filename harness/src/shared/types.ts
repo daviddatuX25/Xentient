@@ -324,3 +324,14 @@ export interface BrainStreamEvent {
   payload: Record<string, unknown>;
   timestamp: number;
 }
+
+// ---- Event Subscription (Sprint 4) ----
+
+export interface EventSubscription {
+  id: string;                       // subscription UUID
+  eventTypes: string[];             // which events to receive
+  maxRateMs: number;                 // rate limit: 0=real-time, 1000=default
+  buffer: unknown[];                // pending events awaiting flush
+  lastFlushAt: number;              // timestamp of last flush
+  flushTimer: ReturnType<typeof setTimeout> | null;
+}

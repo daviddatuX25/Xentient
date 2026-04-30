@@ -359,7 +359,12 @@ export const SKILL_TOOLS = {
   LIST_SKILLS: 'xentient_list_skills',
   GET_SKILL_LOG: 'xentient_get_skill_log',
   ACTIVATE_CONFIG: 'xentient_activate_config',
+  REGISTER_CONFIG: 'xentient_register_config',
   RESOLVE_CONFLICT: 'xentient_resolve_conflict',
+  GET_CAPABILITIES: 'xentient_get_capabilities',
+  GET_SKILL_SCHEMA: 'xentient_get_skill_schema',
+  SUBSCRIBE_EVENTS: 'xentient_subscribe_events',
+  UNSUBSCRIBE_EVENTS: 'xentient_unsubscribe_events',
 } as const;
 
 // Builtin skill IDs (cannot be removed)

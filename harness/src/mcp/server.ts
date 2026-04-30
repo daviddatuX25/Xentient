@@ -117,7 +117,6 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
       priority: z.number().default(10),
       cooldownMs: z.number().default(0),
       configFilter: z.string().optional().describe('Only activate in this configuration'),
-      modeFilter: z.string().optional().describe('Only activate in this configuration (deprecated: use configFilter)'),
     } as any,
     async (params: any) => handlers.xentient_register_skill(params),
   );
@@ -133,7 +132,6 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
       actions: z.array(z.record(z.unknown())).optional(),
       escalation: z.record(z.unknown()).optional(),
       configFilter: z.string().optional().describe('Only activate in this configuration'),
-      modeFilter: z.string().optional().describe('Deprecated: use configFilter'),
     } as any,
     async (params: any) => handlers.xentient_update_skill(params),
   );
@@ -178,16 +176,6 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
       limit: z.number().optional().default(50),
     } as any,
     async (params: { spaceId?: string; skillId?: string; since?: number; limit?: number }) => handlers.xentient_get_skill_log(params),
-  );
-
-  server.tool(
-    'xentient_switch_mode',
-    'Change the active Configuration for a Space. Deprecated: use xentient_activate_config.',
-    {
-      spaceId: z.string(),
-      mode: z.string().describe('Configuration name to activate'),
-    } as any,
-    async ({ spaceId, mode }: { spaceId: string; mode: string }) => handlers.xentient_switch_mode({ spaceId, mode }),
   );
 
   server.tool(
@@ -272,6 +260,77 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
     'Reload the currently active pack from disk (hot-reload)',
     {} as any,
     async () => handlers.xentient_reload_pack(),
+  );
+
+  server.tool(
+    'xentient_register_config',
+    'Register a new configuration (Brain-authored)',
+    {
+      name: z.string().regex(/^[a-z0-9-]{1,32}$/).describe('Configuration name (lowercase, hyphens, 1-32 chars)'),
+      displayName: z.string().max(64).describe('Human-readable configuration name'),
+      nodeAssignments: z.record(z.string()).optional().describe('Map of node role to NodeSkill ID'),
+      coreSkills: z.array(z.string()).min(1).describe('CoreSkill IDs enabled for this config'),
+      transitions: z.record(z.unknown()).optional().describe('Auto-transition rules'),
+    } as any,
+    ({ name, displayName, nodeAssignments, coreSkills, transitions }: { name: string; displayName: string; nodeAssignments?: Record<string, string>; coreSkills: string[]; transitions?: Record<string, unknown> }) =>
+      handlers.xentient_register_config({ name, displayName, nodeAssignments, coreSkills, transitions }),
+  );
+
+  server.tool(
+    'xentient_brain_stream',
+    'Push brain reasoning tokens and events back to Core SSE bus for live dashboard rendering',
+    {
+      escalation_id: z.string().describe('Escalation ID this stream event belongs to'),
+      subtype: z.string().describe('Event subtype: escalation_received, reasoning_token, tool_call_fired, tool_call_result, tts_queued, escalation_complete'),
+      payload: z.record(z.unknown()).optional().describe('Event-specific payload data'),
+    } as any,
+    async ({ escalation_id, subtype, payload }: { escalation_id: string; subtype: string; payload?: Record<string, unknown> }) =>
+      handlers.xentient_brain_stream({ escalation_id, subtype, payload }),
+  );
+
+  // ============================================================
+  // EVENT SUBSCRIPTION TOOLS — Sprint 4
+  // ============================================================
+
+  server.tool(
+    'xentient_subscribe_events',
+    'Subscribe to a filtered event stream from Core',
+    {
+      eventTypes: z.array(z.string()).min(1).describe('Event types to receive (e.g. ["motion_detected", "sensor_update"])'),
+      maxRateMs: z.number().int().min(0).default(1000).describe('Minimum ms between deliveries. 0 = real-time.'),
+    } as any,
+    ({ eventTypes, maxRateMs }: { eventTypes: string[]; maxRateMs: number }) => handlers.xentient_subscribe_events({ eventTypes, maxRateMs }),
+  );
+
+  server.tool(
+    'xentient_unsubscribe_events',
+    'Remove an event subscription',
+    {
+      subscriptionId: z.string().describe('The subscription ID to remove'),
+    } as any,
+    ({ subscriptionId }: { subscriptionId: string }) => handlers.xentient_unsubscribe_events({ subscriptionId }),
+  );
+
+  // ============================================================
+  // CAPABILITY DISCOVERY TOOLS — Sprint 3
+  // ============================================================
+
+  server.tool(
+    'xentient_get_capabilities',
+    'Return the full current capability picture of the Xentient system (nodes, core, space)',
+    {
+      spaceId: z.string().optional().describe('Space ID to query. Defaults to "default".'),
+    } as any,
+    async ({ spaceId }: { spaceId?: string }) => handlers.xentient_get_capabilities({ spaceId }),
+  );
+
+  server.tool(
+    'xentient_get_skill_schema',
+    'Return the schema for a skill type (CoreSkill, NodeSkill, Configuration) for Brain to author new skills',
+    {
+      skillType: z.enum(['CoreSkill', 'NodeSkill', 'Configuration']).describe('The skill type to get schema for'),
+    } as any,
+    async ({ skillType }: { skillType: string }) => handlers.xentient_get_skill_schema({ skillType }),
   );
 
   // Wire push-based events from Core subsystems -> Brain

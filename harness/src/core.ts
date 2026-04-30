@@ -17,6 +17,7 @@ import { SensorHistory } from "./engine/SensorHistory";
 import { MotionHistory } from "./engine/MotionHistory";
 import { ModeHistory } from "./engine/ModeHistory";
 import { startMcpServer } from "./mcp/server";
+import { EventSubscriptionManager } from "./engine/EventSubscriptionManager";
 import type { SensorCache, Space } from "./shared/types";
 import { MCP_EVENTS, PROTOCOL_VERSION, PERIPHERAL_IDS } from "./shared/contracts";
 import pino from "pino";
@@ -68,7 +69,7 @@ async function main() {
   // Start MCP server (stdio transport - brain processes connect here)
   // Mutable ref pattern: create deps object first, pass to startMcpServer,
   // then assign spaceManager after both mcpServer and spaceManager exist.
-  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge; packLoader?: PackLoader } = {
+  const mcpDeps: { mqtt: MqttClient; audio: AudioServer; camera: CameraServer; modeManager: ModeManager; sensorCache: SensorCache; spaceManager?: SpaceManager; eventBridge?: EventBridge; packLoader?: PackLoader; controlServer?: ControlServer; eventSubscriptionManager?: EventSubscriptionManager } = {
     mqtt,
     audio: audioServer,
     camera: cameraServer,
@@ -90,6 +91,15 @@ async function main() {
 
   // Wire spaceManager into MCP deps (createToolHandlers captures deps by reference)
   mcpDeps.spaceManager = spaceManager;
+
+  // --- EventSubscriptionManager: Sprint 4 event subscription system ---
+  const eventSubManager = new EventSubscriptionManager((subscriptionId: string, events: unknown[]) => {
+    mcpServer.server.notification({
+      method: 'xentient/event_batch',
+      params: { subscriptionId, events },
+    } as any).catch((err: Error) => logger.error({ err, subscriptionId }, 'Failed to send event_batch notification'));
+  });
+  mcpDeps.eventSubscriptionManager = eventSubManager;
 
   // Default Space (single-node v1)
   const defaultSpace: Space = {
@@ -252,22 +262,29 @@ async function main() {
     controlPort,
   );
 
+  // Wire controlServer into MCP deps (for brain stream SSE relay)
+  mcpDeps.controlServer = controlServer;
+
   // ── SSE Event Wiring ────────────────────────────────────────────────
 
   // Skill observability events (existing)
   spaceManager.on('skill_fired', (event: any) => {
     controlServer.broadcastSSE({ type: 'skill_fired', ...event });
+    eventSubManager.onEvent('skill_fired', event);
   });
   spaceManager.on('skill_escalated', (event: any) => {
     controlServer.broadcastSSE({ type: 'skill_escalated', ...event });
+    eventSubManager.onEvent('skill_escalated', event);
   });
   spaceManager.on('skill_conflict', (event: any) => {
     controlServer.broadcastSSE({ type: 'skill_conflict', ...event });
+    eventSubManager.onEvent('skill_conflict', event);
   });
 
   // Skill lifecycle events (new in 08-02)
   spaceManager.on('skill_registered', (data: { skillId: string; source: string; triggerType: string }) => {
     controlServer.broadcastSSE({ type: 'skill_registered', ...data });
+    eventSubManager.onEvent('skill_registered', data);
     // Counter interval optimization (Expansion 2.2):
     // Start counter polling when first skill with collectors is registered
     const skill = spaceManager.listSkills().find(s => s.id === data.skillId);
@@ -277,6 +294,7 @@ async function main() {
   });
   spaceManager.on('skill_removed', (data: { skillId: string }) => {
     controlServer.broadcastSSE({ type: 'skill_removed', ...data });
+    eventSubManager.onEvent('skill_removed', data);
     // Stop counter polling if no skills have collectors
     const hasCollectors = spaceManager.listSkills().some(s => s.collect?.length);
     if (!hasCollectors && counterInterval) {
@@ -286,6 +304,7 @@ async function main() {
   });
   spaceManager.on('skill_updated', (data: { skillId: string; patch: Record<string, unknown> }) => {
     controlServer.broadcastSSE({ type: 'skill_updated', ...data });
+    eventSubManager.onEvent('skill_updated', data);
     // Counter interval lifecycle: check if collect was added/removed
     if ('collect' in data.patch) {
       const hasCollectors = spaceManager.listSkills().some(s => s.collect?.length);
@@ -318,17 +337,32 @@ async function main() {
   modeManager.on('mode_change', (data: { from: string; to: string; timestamp: number }) => {
     modeHistory.recordTransition(data.to);
     controlServer.broadcastSSE({ type: 'mode_change', ...data });
+    eventSubManager.onEvent('mode_changed', data);
+  });
+
+  // Config change event → event subscription system
+  spaceManager.on('config_changed', (data: any) => {
+    eventSubManager.onEvent('config_changed', data);
   });
 
   // Throttled sensor updates via SSE (replaces direct broadcast)
+  // Also forward motion_detected and sensor_update to event subscription system
   mqtt.on("sensor", (data: unknown) => {
-    const d = data as { peripheralType?: number };
+    const d = data as { peripheralType?: number; payload?: { motion?: boolean } };
     if (d.peripheralType === PERIPHERAL_IDS.BME280) {
       controlServer.broadcastThrottledSensor({
         temperature: sensorCache.temperature,
         humidity: sensorCache.humidity,
         pressure: sensorCache.pressure,
       });
+      eventSubManager.onEvent('sensor_update', {
+        temperature: sensorCache.temperature,
+        humidity: sensorCache.humidity,
+        pressure: sensorCache.pressure,
+      });
+    }
+    if (d.peripheralType === PERIPHERAL_IDS.PIR && d.payload?.motion) {
+      eventSubManager.onEvent('motion_detected', { timestamp: Date.now() });
     }
   });
 
@@ -356,6 +390,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down gracefully...");
+    eventSubManager.clearAll();
     eventBridge.stop();
     spaceManager.stopAll();
     logger.info("SpaceManager stopped — all SkillExecutors shut down");

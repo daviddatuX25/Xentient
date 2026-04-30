@@ -3,8 +3,8 @@ import path from 'path';
 import pino from 'pino';
 import { z } from 'zod';
 import { EventEmitter } from 'events';
-import { PackSkillManifestSchema } from '../shared/contracts';
-import type { CoreSkill, SkillTrigger, CoreAction } from '../shared/types';
+import { PackSkillManifestSchema, BUILTIN_SKILL_IDS, BuiltinSkillId } from '../shared/contracts';
+import type { CoreSkill, SkillTrigger, CoreAction, Configuration } from '../shared/types';
 
 type ParsedManifest = z.infer<typeof PackSkillManifestSchema>;
 type ParsedPackSkill = ParsedManifest['skills'][number];
@@ -102,6 +102,46 @@ export class PackLoader extends EventEmitter {
     if (!fs.existsSync(this.packsDir)) return [];
     return fs.readdirSync(this.packsDir)
       .filter(dir => fs.existsSync(path.join(this.packsDir, dir, 'skills.json')));
+  }
+
+  /** Register a new configuration (Brain-authored). Adds to in-memory manifest and persists to disk. */
+  registerConfig(config: Configuration): void {
+    const manifest = this.getLoadedPackManifest();
+    if (!manifest) {
+      logger.error('No pack loaded — cannot register configuration');
+      return;
+    }
+    // Validate: no duplicate config name
+    if (manifest.configurations.find(c => c.name === config.name)) {
+      logger.error({ configName: config.name }, 'Configuration already exists in pack');
+      return;
+    }
+    // Validate coreSkill IDs exist
+    for (const skillId of config.coreSkills) {
+      const found = manifest.skills.find(s => s.id === skillId) || BUILTIN_SKILL_IDS.includes(skillId as BuiltinSkillId);
+      if (!found) {
+        logger.error({ skillId, configName: config.name }, 'CoreSkill not found in pack');
+        return;
+      }
+    }
+    // Add with source tag
+    manifest.configurations.push({ ...config });
+    // Persist to disk
+    this.persistManifest(manifest);
+    logger.info({ configName: config.name }, 'Brain-authored configuration registered');
+  }
+
+  /** Persist the manifest back to disk. */
+  private persistManifest(manifest: ParsedManifest): void {
+    const packName = this.getLoadedPack();
+    if (!packName) return;
+    const manifestPath = path.join(this.packsDir, packName, 'skills.json');
+    try {
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+      logger.info({ packName, path: manifestPath }, 'Pack manifest persisted');
+    } catch (err) {
+      logger.error({ err, packName }, 'Failed to persist pack manifest');
+    }
   }
 
   reload(): void {
