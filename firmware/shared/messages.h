@@ -73,6 +73,61 @@ static constexpr uint8_t  UART_CHUNK_MAX_PAYLOAD = 200; // max chunk payload byt
 static constexpr uint32_t CAM_TIMER_INTERVAL_MS  = 3000;  // push every 3s
 static constexpr uint32_t CAM_REASSEMBLY_TIMEOUT_MS = 5000; // discard partial frame after 5s
 
+// --- NodeProfile (mirrors NodeProfile in contracts.ts) ---
+// Core compiles a NodeSkill to a NodeProfile and pushes it via MQTT.
+// Firmware hot-swaps at end of each work iteration.
+
+typedef struct {
+    char     profile_id[32];
+    uint16_t pir_interval_ms;
+    uint8_t  mic_mode;        // 0=off, 1=vad-only, 2=always-on
+    uint16_t bme_interval_ms;
+    uint8_t  camera_mode;     // 0=off, 1=on-motion, 2=stream
+    uint8_t  lcd_face;        // 0=calm, 1=alert, 2=listening, 3=speaking
+    uint16_t event_mask;      // bitmask of EVENT_MASK_* bits
+} NodeProfile;
+
+// Event mask bits — must match harness contracts.ts EVENT_MASK_BITS
+#define EVENT_MASK_PRESENCE     0x0001
+#define EVENT_MASK_MOTION       0x0002
+#define EVENT_MASK_ENV          0x0004
+#define EVENT_MASK_AUDIO_CHUNK  0x0008
+#define EVENT_MASK_VAD          0x0010
+#define EVENT_MASK_FRAME        0x0020
+
+// Default profile on boot (safe: PIR presence only, mic off, camera off)
+static const NodeProfile DEFAULT_PROFILE = {
+    "default",
+    1000,   // pir_interval_ms
+    0,      // mic_mode: off
+    5000,   // bme_interval_ms
+    0,      // camera_mode: off
+    0,      // lcd_face: calm
+    EVENT_MASK_PRESENCE,
+};
+
+// --- MQTT topics for NodeProfile hot-swap (mirrors contracts.ts MQTT_TOPICS) ---
+static constexpr const char* TOPIC_NODE_PROFILE_SET = "xentient/node/{nodeId}/profile/set";
+static constexpr const char* TOPIC_NODE_PROFILE_ACK = "xentient/node/{nodeId}/profile/ack";
+
+// --- Two-task model shared state (critical-section protected) ---
+// Task 1 (Work Task, Core 1, high priority): runs activeProfile
+// Task 2 (Config Task, Core 0, low priority): receives new profiles via MQTT
+//
+// profileMux guards the pendingProfile → activeProfile memcpy.
+// profileUpdateFlag is set by MQTT callback (any core) and consumed by Config Task.
+// lastReceivedProfileId is set by MQTT callback immediately on parse — echoed in ack
+// regardless of whether the swap has completed yet.
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+
+extern portMUX_TYPE       profileMux;           // spinlock for critical section
+extern volatile NodeProfile activeProfile;
+extern volatile NodeProfile pendingProfile;
+extern volatile bool       profileUpdateFlag;
+extern char               lastReceivedProfileId[32]; // not volatile — only written under profileMux
+
 // --- MQTT constraints (per CONTRACTS.md Payload Cap) ---
 static constexpr size_t   MQTT_PAYLOAD_CAP   = 3072;  // 3KB hard limit
 static constexpr uint8_t  MQTT_RETRY_MAX     = 3;     // exponential: 1s, 2s, 4s
@@ -88,11 +143,11 @@ static constexpr const char* NODE_BASE_ID   = "node-01";
 static constexpr const char* SPACE_ID       = "living-room";
 
 // --- Broker / WiFi (override before flashing) ---
-static constexpr const char* MQTT_BROKER_ADDR = "192.168.1.100";
+static constexpr const char* MQTT_BROKER_ADDR = "10.22.25.106";
 static constexpr uint16_t    MQTT_BROKER_PORT  = 1883;
-static constexpr const char* WIFI_SSID         = "your-ssid";
-static constexpr const char* WIFI_PASS         = "your-password";
+static constexpr const char* WIFI_SSID         = "Sarmiento Fam WiFi";
+static constexpr const char* WIFI_PASS         = "sarmientofam071081";
 
 // --- WebSocket harness ---
-static constexpr const char* WS_HARNESS_HOST = "192.168.1.100";
-static constexpr uint16_t    WS_HARNESS_PORT  = 8765;
+static constexpr const char* WS_HARNESS_HOST = "10.22.25.106";
+static constexpr uint16_t    WS_HARNESS_PORT  = 8080;

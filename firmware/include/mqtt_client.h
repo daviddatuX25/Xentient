@@ -19,3 +19,10 @@ void mqtt_publish(const char* topic, const char* payload, size_t length);
 
 // Subscribe wrapper.
 void mqtt_subscribe(const char* topic);
+
+// Force an immediate MQTT reconnect (called after WiFi reconnect).
+void mqtt_reconnect();
+
+// Send node_profile_ack with profileId and status.
+// profileId is echoed from lastReceivedProfileId regardless of swap state.
+void send_profile_ack(const char* status);
