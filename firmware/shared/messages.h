@@ -111,7 +111,7 @@ static const NodeProfile DEFAULT_PROFILE = {
 // NOT subscribe/publish targets. Use buildNodeTopic() to get the resolved topic.
 static constexpr const char* TOPIC_NODE_PROFILE_SET_TPL = "xentient/node/{nodeId}/profile/set";
 static constexpr const char* TOPIC_NODE_PROFILE_ACK_TPL = "xentient/node/{nodeId}/profile/ack";
-static constexpr const char* TOPIC_NODE_PROFILE_SET_BASE = "xentient/node/";
+static constexpr const char* TOPIC_NODE_BASE = "xentient/node/";
 static constexpr const char* TOPIC_NODE_PROFILE_SET_SUFFIX = "/profile/set";
 static constexpr const char* TOPIC_NODE_PROFILE_ACK_SUFFIX = "/profile/ack";
 
