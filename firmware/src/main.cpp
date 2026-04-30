@@ -19,6 +19,9 @@
 #include "messages.h"
 #include "provisioning.h"
 
+// RTC memory survives deep sleep — used for exponential backoff
+RTC_DATA_ATTR static uint8_t bootFailCount = 0;
+
 // ============================================================================
 //  Shared state — two-task model
 // ============================================================================
@@ -330,6 +333,9 @@ void setup() {
         ESP.restart();
     }
 
+    // Migrate legacy NVS keys from pre-S3 firmware
+    provisioning_migrate_legacy();
+
     // -- Provisioning: NVS → portal fallback, WiFiManager owns WiFi lifecycle --
     ProvisioningConfig cfg;
     if (provisioning_has_config()) {
@@ -362,18 +368,24 @@ void setup() {
 
     // Validate config completeness
     if (cfg.mqttHost[0] == '\0' || cfg.nodeId[0] == '\0') {
-        Serial.println("[BOOT] Incomplete config — mqttHost or nodeId missing, restarting portal");
+        bootFailCount++;
+        // Exponential backoff: 10s, 20s, 40s, 80s, 160s, 320s→capped 300s
+        uint8_t shift = min((uint8_t)(bootFailCount - 1), (uint8_t)5);
+        uint32_t sleepSecs = min(10u << shift, 300u);
+        Serial.printf("[BOOT] Incomplete config (fail %u) — sleeping %us then retry\n", bootFailCount, sleepSecs);
         provisioning_clear();
         lcd_display_face("(?_?)", "bad config");
         delay(2000);
-        esp_sleep_enable_timer_wakeup(10 * 1000000); // 10s
+        esp_sleep_enable_timer_wakeup((uint64_t)sleepSecs * 1000000);
         esp_deep_sleep_start();
     }
+
+    bootFailCount = 0; // Config valid — reset failure counter
 
     // Register WiFi event handler for MQTT reconnect on WiFi reconnect (8.6)
     WiFi.onEvent(wifi_event_cb);
 
-    mqtt_init(cfg.mqttHost, cfg.mqttPort, cfg.nodeId);
+    mqtt_init(cfg.mqttHost, cfg.mqttPort, cfg.nodeId, cfg.spaceId);
     ws_audio_init(cfg.wsHost, cfg.wsPort);
     i2s_mic_init();
     vad_init();

@@ -19,6 +19,7 @@ static uint16_t   mqttBrokerPort     = MQTT_BROKER_PORT;
 
 // --- Runtime-resolved nodeId for topic building ---
 static char runtimeNodeId[24] = NODE_BASE_ID;
+static char runtimeSpaceId[24] = SPACE_ID;
 static char resolvedTopicProfileSet[64] = {0};
 static char resolvedTopicProfileAck[64] = {0};
 static char resolvedTopicBirth[64] = {0};
@@ -46,16 +47,20 @@ static void mqtt_connect() {
         lcd_set_state(NodeState::LISTENING);
 
         // Subscribe to control and display topics
-        mqtt_subscribe(TOPIC_MODE_SET);
-        mqtt_subscribe(TOPIC_DISPLAY);
-        mqtt_subscribe(resolvedTopicProfileSet);
+        if (!mqtt_subscribe(TOPIC_MODE_SET))
+            Serial.printf("[MQTT] WARN: subscribe failed for %s\n", TOPIC_MODE_SET);
+        if (!mqtt_subscribe(TOPIC_DISPLAY))
+            Serial.printf("[MQTT] WARN: subscribe failed for %s\n", TOPIC_DISPLAY);
+        if (!mqtt_subscribe(resolvedTopicProfileSet))
+            Serial.printf("[MQTT] WARN: subscribe failed for %s\n", resolvedTopicProfileSet);
 
         // Publish birth message so harness knows this node is online
         JsonDocument birthDoc;
         birthDoc["v"]        = MSG_VERSION;
         birthDoc["type"]     = "node_birth";
         birthDoc["nodeId"]   = runtimeNodeId;
-        birthDoc["timestamp"] = (uint32_t)millis();
+        birthDoc["spaceId"]  = runtimeSpaceId;
+        birthDoc["ts"]       = (uint32_t)(millis() / 1000);
         char birthBuf[128];
         serializeJson(birthDoc, birthBuf, sizeof(birthBuf));
         mqtt_publish(resolvedTopicBirth, birthBuf, strlen(birthBuf));
@@ -210,7 +215,7 @@ static void mqtt_callback(char* topic, byte* payload, unsigned int length) {
 
 // --- Public API ---
 
-void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId) {
+void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId, const char* spaceId) {
     strncpy(mqttBrokerHost, brokerHost, sizeof(mqttBrokerHost) - 1);
     mqttBrokerHost[sizeof(mqttBrokerHost) - 1] = '\0';
     mqttBrokerPort = brokerPort;
@@ -219,6 +224,10 @@ void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId) 
         runtimeNodeId[sizeof(runtimeNodeId) - 1] = '\0';
     } else if (nodeId && nodeId[0] == '\0') {
         Serial.printf("[MQTT] Warning: empty nodeId, falling back to " NODE_BASE_ID "\n");
+    }
+    if (spaceId && spaceId[0] != '\0') {
+        strncpy(runtimeSpaceId, spaceId, sizeof(runtimeSpaceId) - 1);
+        runtimeSpaceId[sizeof(runtimeSpaceId) - 1] = '\0';
     }
     // Resolve nodeId-dependent topics at runtime
     buildNodeTopic(runtimeNodeId, TOPIC_NODE_PROFILE_SET_SUFFIX, resolvedTopicProfileSet, sizeof(resolvedTopicProfileSet));
@@ -281,8 +290,8 @@ void mqtt_publish(const char* topic, const char* payload, size_t length) {
     client.publish(topic, (const uint8_t*)payload, length, false);  // QoS 0, retain=false
 }
 
-void mqtt_subscribe(const char* topic) {
-    client.subscribe(topic);
+bool mqtt_subscribe(const char* topic) {
+    return client.subscribe(topic);
 }
 
 void mqtt_reconnect() {
