@@ -7,6 +7,9 @@ import { SkillExecutor } from './SkillExecutor';
 import { SkillLog } from './SkillLog';
 import { ModeManager } from './ModeManager';
 import { MqttClient } from '../comms/MqttClient';
+import { PackLoader } from './PackLoader';
+import { TransitionQueue } from './TransitionQueue';
+import { toNodeProfile, DEFAULT_NODE_PROFILE } from './nodeProfileCompiler';
 import type { SkillPersistence } from './SkillPersistence';
 
 const logger = pino({ name: 'space-manager' }, process.stderr);
@@ -16,6 +19,8 @@ export class SpaceManager extends EventEmitter {
   private executors: Map<string, SkillExecutor> = new Map();
   readonly skillLog: SkillLog;
   private persistence?: SkillPersistence;
+  readonly transitionQueue: TransitionQueue;
+  private packLoader?: PackLoader;
 
   constructor(
     private mcpServer: McpServer,
@@ -26,11 +31,17 @@ export class SpaceManager extends EventEmitter {
   ) {
     super();
     this.skillLog = new SkillLog();
+    this.transitionQueue = new TransitionQueue();
   }
 
   /** Inject persistence instance (called from core after construction) */
   setPersistence(persistence: SkillPersistence): void {
     this.persistence = persistence;
+  }
+
+  /** Inject PackLoader for config validation and NodeProfile compilation */
+  setPackLoader(packLoader: PackLoader): void {
+    this.packLoader = packLoader;
   }
 
   /** Create or replace a Space and start its executor */
@@ -160,22 +171,32 @@ export class SpaceManager extends EventEmitter {
     return this.activateConfig(spaceId, newMode);
   }
 
+  /**
+   * Activate a named configuration for a Space.
+   * Queues the transition for execution on the next heartbeat tick drain.
+   * Returns true if the transition was queued (valid config), false otherwise.
+   */
   activateConfig(spaceId: string, configName: string): boolean {
-    const executor = this.getExecutor(spaceId);
-    if (!executor) return false;
     const space = this.spaces.get(spaceId);
-    if (space) space.activeConfig = configName;
-    const prev = executor.getActiveConfig();
-    executor.setActiveConfig(configName);
-    this.mcpServer.server.notification({
-      method: SKILL_EVENTS.CONFIG_CHANGED,
-      params: {
-        spaceId,
-        previousConfig: prev,
-        newConfig: configName,
-        activeSkills: executor.listSkills(spaceId).filter(s => s.enabled).map(s => s.id),
-      },
-    } as any).catch((err: Error) => logger.error({ err, spaceId }, 'Failed to send config_changed notification'));
+    if (!space) {
+      logger.warn({ spaceId }, 'No space found for activateConfig');
+      return false;
+    }
+
+    // Validate config exists in the active pack (if packLoader is available)
+    if (this.packLoader) {
+      const manifest = this.packLoader.getLoadedPackManifest();
+      if (manifest) {
+        const config = manifest.configurations.find(c => c.name === configName);
+        if (!config) {
+          logger.error({ configName, pack: this.packLoader.getLoadedPack() }, 'Configuration not found in active pack');
+          return false;
+        }
+      }
+    }
+
+    this.transitionQueue.enqueue({ type: 'activate_config', configName, spaceId });
+    logger.info({ spaceId, configName, queueDepth: this.transitionQueue.pending }, 'Config transition queued');
     return true;
   }
 
@@ -188,6 +209,136 @@ export class SpaceManager extends EventEmitter {
     if (prev === mode) return;
     space.activeConfig = mode;
     this.emit('spaceModeChanged', { spaceId, from: prev, to: mode });
+  }
+
+  /**
+   * Execute a queued config transition.
+   * Called by the heartbeat tick after all skill evaluations complete.
+   */
+  private executeConfigTransition(spaceId: string, configName: string): void {
+    const space = this.spaces.get(spaceId);
+    if (!space) {
+      logger.warn({ spaceId }, 'No space found for config transition');
+      return;
+    }
+
+    const previousConfig = space.activeConfig;
+
+    // 1. Update space state
+    space.activeConfig = configName;
+
+    // 2. Compile and push NodeProfiles for each node (if packLoader available)
+    if (this.packLoader) {
+      const manifest = this.packLoader.getLoadedPackManifest();
+      const config = manifest?.configurations.find(c => c.name === configName);
+      if (manifest && config) {
+        for (const node of space.nodes) {
+          const nodeSkillId = config.nodeAssignments[node.role];
+          if (!nodeSkillId) continue; // no assignment for this role — skip
+
+          const nodeSkill = manifest.nodeSkills.find(ns => ns.id === nodeSkillId);
+          if (!nodeSkill) {
+            logger.warn({ nodeSkillId, role: node.role }, 'NodeSkill not found in pack');
+            this.pushDefaultProfile(node);
+            continue;
+          }
+
+          const profile = toNodeProfile(nodeSkill, node);
+          if (profile) {
+            this.mqttClient.publish(
+              `xentient/node/${node.nodeId}/profile/set`,
+              JSON.stringify({ v: 1, type: 'node_profile_set', ...profile }),
+            );
+            node.state = 'running';
+          } else {
+            this.pushDefaultProfile(node);
+            logger.warn({ configName, nodeId: node.nodeId, role: node.role }, 'NodeSkill hardware mismatch, pushed default profile');
+          }
+        }
+      }
+    }
+
+    // 3. Enable config-scoped CoreSkills
+    const executor = this.executors.get(spaceId);
+    if (executor) {
+      executor.setActiveConfig(configName);
+    }
+
+    // 4. Notify Brain via MCP
+    this.mcpServer.server.notification({
+      method: SKILL_EVENTS.CONFIG_CHANGED,
+      params: {
+        spaceId,
+        previousConfig,
+        newConfig: configName,
+        activeSkills: executor?.listSkills(spaceId).filter(s => s.enabled).map(s => s.id) ?? [],
+      },
+    } as any).catch((err: Error) => logger.error({ err, spaceId }, 'Failed to send config_changed notification'));
+
+    // 5. Observability event
+    this.broadcastObservabilityEvent({
+      type: 'config_changed',
+      spaceId,
+      previousConfig,
+      newConfig: configName,
+      timestamp: Date.now(),
+    } as any);
+
+    logger.info({ spaceId, previousConfig, newConfig: configName }, 'Config transition executed');
+  }
+
+  /** Push default NodeProfile to a node (used when NodeSkill is missing or incompatible) */
+  private pushDefaultProfile(node: { nodeId: string }): void {
+    this.mqttClient.publish(
+      `xentient/node/${node.nodeId}/profile/set`,
+      JSON.stringify({ v: 1, type: 'node_profile_set', ...DEFAULT_NODE_PROFILE }),
+    );
+    logger.info({ nodeId: node.nodeId }, 'Default NodeProfile pushed');
+  }
+
+  /**
+   * Process one queued transition. Called after each heartbeat tick cycle.
+   * Returns true if a transition was processed, false if queue was empty.
+   */
+  drainTransition(): boolean {
+    const action = this.transitionQueue.drain();
+    if (!action) return false;
+
+    switch (action.type) {
+      case 'activate_config':
+        this.executeConfigTransition(action.spaceId, action.configName);
+        break;
+      case 'set_node_state': {
+        const space = this.spaces.get(action.spaceId);
+        if (space) {
+          const node = space.nodes.find(n => n.nodeId === action.nodeId);
+          if (node) node.state = action.state;
+        }
+        break;
+      }
+      case 'register_skill':
+        this.registerSkill(action.skill);
+        break;
+      case 'remove_skill':
+        this.removeSkill(action.skillId, action.spaceId);
+        break;
+    }
+
+    return true;
+  }
+
+  /**
+   * Tick: evaluate all skills, then drain one transition.
+   * Called by the main loop or externally.
+   */
+  tick(): void {
+    // Evaluate skills on each executor
+    for (const [, executor] of this.executors) {
+      executor.tick();
+    }
+
+    // After all ticks complete, drain one transition
+    this.drainTransition();
   }
 
   resolveConflict(resolution: { execute: string[]; skip: string[]; reason: string; conflictGroup: string }): void {

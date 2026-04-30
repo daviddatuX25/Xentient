@@ -4,7 +4,7 @@ import pino from 'pino';
 import { z } from 'zod';
 import { EventEmitter } from 'events';
 import { PackSkillManifestSchema } from '../shared/contracts';
-import type { CoreSkill, SkillTrigger, CoreAction } from '../shared/types';
+import type { CoreSkill, SkillTrigger, CoreAction, PackSkillManifest } from '../shared/types';
 
 type ParsedPackSkill = z.infer<typeof PackSkillManifestSchema>['skills'][number];
 
@@ -13,6 +13,7 @@ const logger = pino({ name: 'pack-loader' }, process.stderr);
 export class PackLoader extends EventEmitter {
   private loadedPack: string | null = null;
   private loadedSkillIds: string[] = [];
+  private cachedManifest: PackSkillManifest | null = null;
 
   constructor(
     private packsDir: string,
@@ -46,6 +47,7 @@ export class PackLoader extends EventEmitter {
     }
 
     this.loadedPack = packName;
+    this.cachedManifest = manifest;
     this.emit('pack_loaded', { packName, skillCount: manifest.skills.length });
     logger.info({ pack: packName, skillCount: manifest.skills.length }, 'Pack loaded');
   }
@@ -57,6 +59,7 @@ export class PackLoader extends EventEmitter {
     }
     this.loadedSkillIds = [];
     this.loadedPack = null;
+    this.cachedManifest = null;
     if (packName) {
       this.emit('pack_unloaded', { packName });
     }
@@ -64,6 +67,11 @@ export class PackLoader extends EventEmitter {
 
   getLoadedPack(): string | null {
     return this.loadedPack;
+  }
+
+  /** Return the parsed manifest of the currently loaded pack, or null. */
+  getLoadedPackManifest(): PackSkillManifest | null {
+    return this.cachedManifest;
   }
 
   private expandPackSkill(ps: ParsedPackSkill, packName: string): CoreSkill {

@@ -65,15 +65,37 @@ describe('SpaceManager', () => {
     expect(manager.listSkills('living').some(s => s.id === 'class-reminder')).toBe(false);
   });
 
-  it('activates config and broadcasts xentient/config_changed', () => {
+  it('activates config: queues transition, drains it, and broadcasts config_changed', () => {
     manager.addSpace(makeSpace('study'));
-    manager.activateConfig('study', 'student');
+
+    // activateConfig queues a transition (does NOT execute immediately)
+    const result = manager.activateConfig('study', 'student');
+    expect(result).toBe(true);
+
+    // Before drain, space should still be on 'default'
+    expect(manager.listSkills('study')).toBeDefined();
+
+    // Drain the transition
+    const drained = manager.drainTransition();
+    expect(drained).toBe(true);
+
+    // After drain, the config_changed notification should have been sent
     expect(mockMcpServer.server.notification).toHaveBeenCalledWith(
       expect.objectContaining({ method: 'xentient/config_changed' })
     );
   });
 
-  it('forwards events to correct space executor', () => {
+  it('activateConfig returns false for nonexistent space', () => {
+    const result = manager.activateConfig('nonexistent', 'student');
+    expect(result).toBe(false);
+  });
+
+  it('drainTransition returns false when queue is empty', () => {
+    manager.addSpace(makeSpace('study'));
+    expect(manager.drainTransition()).toBe(false);
+  });
+
+  it('forward events to correct space executor', () => {
     manager.addSpace(makeSpace('study'));
     const studySkill = makeSkill('motion-log', 'study');
     studySkill.trigger = { type: 'event', event: 'motion_detected' };
@@ -98,5 +120,35 @@ describe('SpaceManager', () => {
     manager.addSpace(makeSpace('study'));
     const removed = manager.removeSkill('_pir-wake');
     expect(removed).toBe(false);
+  });
+
+  describe('TransitionQueue integration', () => {
+    it('queues and drains activate_config transitions in order', () => {
+      manager.addSpace(makeSpace('study'));
+
+      manager.activateConfig('study', 'student');
+      manager.activateConfig('study', 'focused');
+
+      // Two items in queue
+      expect(manager.transitionQueue.pending).toBe(2);
+
+      // Drain first
+      manager.drainTransition();
+      // Still one pending
+      expect(manager.transitionQueue.pending).toBe(1);
+
+      // Drain second
+      manager.drainTransition();
+      expect(manager.transitionQueue.pending).toBe(0);
+    });
+
+    it('tick() drains one transition after all executor ticks', () => {
+      manager.addSpace(makeSpace('study'));
+      manager.activateConfig('study', 'student');
+
+      // tick should process one transition
+      manager.tick();
+      expect(manager.transitionQueue.pending).toBe(0);
+    });
   });
 });

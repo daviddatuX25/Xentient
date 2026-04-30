@@ -197,6 +197,9 @@ async function main() {
   );
   mcpDeps.packLoader = packLoader;
 
+  // Wire PackLoader into SpaceManager for config validation and NodeProfile compilation
+  spaceManager.setPackLoader(packLoader);
+
   // Auto-load default pack if it exists
   if (fs.existsSync(path.join(packsDir, 'default', 'skills.json'))) {
     try {
