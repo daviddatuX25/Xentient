@@ -358,4 +358,4 @@ Two packs planned for demo day (Apr 24). **Pack system code does NOT ship before
 
 ---
 
-*Cross-references: CONTRACTS.md (MQTT pack control topics, message schemas), VISION.md (Brain Router handler table), SPACES.md (one pack per space), NON_GOALS.md (no multi-pack, no remote fetch)*
+*Cross-references: CONTRACTS.md (MQTT pack control topics, message schemas), CONTEXT.md (Brain Router handler table, skill continuum), SPACES.md (one pack per space), NODE-SKILLS.md (L0 Node Skill pairing)*

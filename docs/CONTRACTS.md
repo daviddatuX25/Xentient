@@ -455,4 +455,194 @@ The C++ firmware hand-mirrors these schemas in `firmware/shared/messages.h`. No 
 
 ---
 
-*Cross-references: HARDWARE.md (B1 retry, B2 contract, B7 LCD), PACKS.md (pack control topics), SPACES.md (space/mode topics), VISION.md (three-tier architecture)*
+*Cross-references: HARDWARE.md (B1 retry, B2 contract, B7 LCD), PACKS.md (pack control topics), SPACES.md (space/mode topics), CONTEXT.md (three-tier architecture), BRAIN-INTERFACE.md (Brain channels), NODE-SKILLS.md (Node Skill spec)*
+
+---
+
+## Node Skill MQTT Contracts
+
+### Skill Assignment (Core → Node)
+
+Topic: `xentient/node/{nodeId}/skill/set`
+
+```json
+{
+  "v": 1,
+  "type": "node_skill_set",
+  "skillId": "study-presence",
+  "skill": {
+    "id": "study-presence",
+    "name": "Study Presence Monitor",
+    "version": "1.0.0",
+    "requires": { "pir": true, "bme": true },
+    "sampling": { "pirDebounceMs": 500, "bmeIntervalMs": 10000 },
+    "emits": ["presence", "env"],
+    "expectedBy": "_pir-wake",
+    "modeTask": {
+      "onEntry": "LCD:(^_^) Study",
+      "stateMachine": {
+        "initial": "monitoring",
+        "states": {
+          "monitoring": { "lcd": ["(^_^) Study", "  ready..."] },
+          "alert": { "lcd": ["(O_O) active", "  motion!"] }
+        },
+        "transitions": [
+          { "from": "monitoring", "to": "alert", "event": "presence" }
+        ]
+      }
+    }
+  }
+}
+```
+
+### Skill Acknowledgment (Node → Core)
+
+Topic: `xentient/node/{nodeId}/skill/ack`
+
+```json
+{
+  "v": 1,
+  "type": "node_skill_ack",
+  "skillId": "study-presence",
+  "status": "loaded",
+  "error": null
+}
+```
+
+Error response:
+
+```json
+{
+  "v": 1,
+  "type": "node_skill_ack",
+  "skillId": "study-presence",
+  "status": "error",
+  "error": "Missing hardware: camera not available on this node"
+}
+```
+
+### Node Skill Manifest Schema
+
+The `skill` field in `node_skill_set` follows the NodeSkill type defined in `docs/NODE-SKILLS.md`. Key constraints:
+
+- `emits`: Must be one of the `NodeEventType` enum values. No arbitrary types.
+- `expectedBy`: Must reference an active CoreSkill. Core validates before push.
+- `requires`: Checked against Node Base hardware before push. Mismatch = `skill_mismatch` event + fallback.
+
+---
+
+## Node Event Type Enum
+
+All event types that a Node Skill can emit are enum-gated. No arbitrary MQTT floods from firmware.
+
+| Event Type | Direction | Payload | Description |
+|------------|-----------|---------|-------------|
+| `presence` | Node → Core | `{ nodeId, timestamp }` | PIR motion detected |
+| `motion` | Node → Core | `{ nodeId, timestamp }` | Alias for presence |
+| `env` | Node → Core | `{ nodeId, temp, humidity, pressure, timestamp }` | BME280 reading |
+| `audio_chunk` | Node → Core | Binary WS | Raw PCM audio chunk |
+| `vad_triggered` | Node → Core | `{ nodeId, rms, timestamp }` | Voice activity detected |
+| `frame` | Node → Core | Binary WS (0xCA prefix) | Camera JPEG frame |
+| `button_press` | Node → Core | `{ nodeId, button, timestamp }` | Physical button |
+| `connection_lost` | Node → Core | `{ nodeId, timestamp }` | Node lost connectivity |
+| `connection_restored` | Node → Core | `{ nodeId, timestamp }` | Node regained connectivity |
+
+Zod schema:
+
+```typescript
+const NodeEventType = z.enum([
+  "presence", "motion", "env", "audio_chunk",
+  "vad_triggered", "frame", "button_press",
+  "connection_lost", "connection_restored"
+]);
+```
+
+---
+
+## Brain Stream MCP Tool
+
+### `xentient_brain_stream`
+
+The Brain calls this MCP tool to push reasoning events back to Core. Core relays them to the SSE bus with `source: "brain"`.
+
+**Parameters:**
+
+```typescript
+interface BrainStreamParams {
+  escalation_id: string;        // ties event to its escalation (required)
+  subtype: BrainStreamSubtype;  // event type (required)
+  payload: unknown;             // event-specific data (required)
+  timestamp?: number;           // epoch-millis, defaults to now
+}
+
+type BrainStreamSubtype =
+  | "reasoning_token"      // LLM is generating text
+  | "tool_call_fired"      // Brain called an xentient_* tool
+  | "tool_call_result"     // result of an xentient_* tool call
+  | "tts_queued"           // TTS audio has been queued for playback
+  | "escalation_received"  // Brain acknowledged the escalation
+  | "escalation_complete"  // Brain finished processing this escalation
+```
+
+**Returns:** `{ success: true }` or error.
+
+**Behavior:** Core receives the event, adds `source: "brain"` and the `escalation_id`, and relays to all SSE subscribers.
+
+---
+
+## Brain Relay SSE Events
+
+Core emits these SSE events when relaying Brain activity to the Dashboard. They all have `source: "brain"` and `escalation_id` to distinguish them from Core-originated events.
+
+### Event Format
+
+```typescript
+interface BrainRelayEvent {
+  type: "brain_event"
+  source: "brain"                    // distinguishes from Core events
+  escalation_id: string             // groups events by escalation
+  subtype: BrainStreamSubtype      // same subtypes as Brain Stream
+  payload: unknown                  // event-specific data
+  timestamp: number                 // epoch-millis
+}
+```
+
+### Subtype Payloads
+
+| Subtype | Payload | Description |
+|---------|---------|-------------|
+| `reasoning_token` | `{ text: string }` | LLM token stream |
+| `tool_call_fired` | `{ tool: string, args: Record<string, unknown> }` | Brain called a tool |
+| `tool_call_result` | `{ tool: string, result: unknown }` | Tool call result |
+| `tts_queued` | `{ audio_id: string, duration_ms: number }` | TTS queued for playback |
+| `escalation_received` | `{ skill_id: string }` | Brain acknowledged escalation |
+| `escalation_complete` | `{ duration_ms: number }` | Brain finished processing |
+
+Dashboard developers use the `source: "brain"` field to distinguish Core events from Brain relay events in the SSE stream. The `escalation_id` groups all events from a single escalation into a timeline.
+
+---
+
+## Escalation Payload Contract
+
+When a CoreSkill with `escalate: true` fires, Core packages an escalation and sends it to all connected MCP clients.
+
+```typescript
+interface EscalationPayload {
+  escalation_id: string        // unique per escalation, used to group Brain Feed events
+  skill_id: string             // the CoreSkill that triggered this escalation
+  space_id: string             // which Space this escalation belongs to
+  mode: SpaceMode              // current mode at time of escalation
+  timestamp: number            // epoch-millis uint32
+  audio?: string               // base64-encoded PCM audio (S16LE, 16kHz, mono)
+  sensor_snapshot?: SensorSnapshot
+  context?: Record<string, unknown>
+}
+
+interface SensorSnapshot {
+  temperature?: number
+  humidity?: number
+  pressure?: number
+  motion?: boolean
+  timestamp: number
+}
+```

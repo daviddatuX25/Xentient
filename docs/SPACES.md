@@ -1,6 +1,6 @@
 # Xentient Spaces & Modes
 
-> L2 Spec — Space model, Mode state machine, integration tiers, and memory scoping. Referenced by VISION.md and implemented by SpaceManager/ModeManager in Platform Track P3-P4.
+> L2 Spec — Space model, Mode state machine, integration tiers, and memory scoping. Referenced by CONTEXT.md and implemented by SpaceManager/ModeManager.
 
 ---
 
@@ -236,4 +236,4 @@ Both phases are post-demo (see NON_GOALS.md). The current harness ships with nei
 
 ---
 
-*Cross-references: VISION.md (Space concept, integration tiers), CONTRACTS.md (MQTT space/mode topics, message schemas), PACKS.md (one pack per space), HARDWARE.md (peripheral ID registry for sensors field), INTEGRATIONS/mem0.md (Mem0 scoping details)*
+*Cross-references: CONTEXT.md (Space concept, integration tiers, skill continuum), CONTRACTS.md (MQTT space/mode topics, message schemas), PACKS.md (one pack per space), HARDWARE.md (peripheral ID registry for sensors field), NODE-SKILLS.md (L0 Node Skills per Space)*
