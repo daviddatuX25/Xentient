@@ -4,12 +4,11 @@
 #include <ArduinoJson.h>
 
 #include "provisioning.h"
+#include "messages.h"
 
 namespace {
 // NVS namespace and key constants — file-local to avoid ODR violations (H1)
 constexpr const char* NVS_NAMESPACE     = "xentient";
-constexpr const char* NVS_KEY_WIFI_SSID = "wifi_ssid";
-constexpr const char* NVS_KEY_WIFI_PASS = "wifi_pass";
 constexpr const char* NVS_KEY_MQTT_HOST = "mqtt_host";
 constexpr const char* NVS_KEY_MQTT_PORT = "mqtt_port";
 constexpr const char* NVS_KEY_NODE_ID   = "node_id";
@@ -30,14 +29,13 @@ void safeStrncpy(char* dst, const char* src, size_t n) {
 } // namespace
 
 bool provisioning_has_config() {
-    // Only checks the 4 keys required for basic connectivity (WiFi SSID,
-    // WiFi password, MQTT host, Node ID). The remaining 4 keys (MQTT port,
-    // Space ID, WS host, WS port) have compile-time defaults in
-    // provisioning_read_config(), so they are not gating. (L3)
+    // Only checks the 2 keys required for basic connectivity (MQTT host,
+    // Node ID). WiFi creds are managed by WiFiManager internally.
+    // The remaining keys (MQTT port, Space ID, WS host, WS port) have
+    // compile-time defaults in provisioning_read_config(), so they are not gating. (L3)
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true); // read-only
-    bool has = prefs.isKey(NVS_KEY_WIFI_SSID) && prefs.isKey(NVS_KEY_WIFI_PASS)
-            && prefs.isKey(NVS_KEY_MQTT_HOST) && prefs.isKey(NVS_KEY_NODE_ID);
+    bool has = prefs.isKey(NVS_KEY_MQTT_HOST) && prefs.isKey(NVS_KEY_NODE_ID);
     prefs.end();
     return has;
 }
@@ -54,10 +52,6 @@ ProvisioningConfig provisioning_read_config() {
 
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true);
-    if (prefs.isKey(NVS_KEY_WIFI_SSID))
-        safeStrncpy(cfg.wifiSsid, prefs.getString(NVS_KEY_WIFI_SSID).c_str(), sizeof(cfg.wifiSsid));
-    if (prefs.isKey(NVS_KEY_WIFI_PASS))
-        safeStrncpy(cfg.wifiPass, prefs.getString(NVS_KEY_WIFI_PASS).c_str(), sizeof(cfg.wifiPass));
     if (prefs.isKey(NVS_KEY_MQTT_HOST))
         safeStrncpy(cfg.mqttHost, prefs.getString(NVS_KEY_MQTT_HOST).c_str(), sizeof(cfg.mqttHost));
     if (prefs.isKey(NVS_KEY_MQTT_PORT))
@@ -122,10 +116,7 @@ bool provisioning_start_portal(const char* provisioningJson) {
         if (!err) {
             Preferences prefs;
             prefs.begin(NVS_NAMESPACE, false);
-            if (doc["wifiSsid"].is<const char*>())
-                prefs.putString(NVS_KEY_WIFI_SSID, doc["wifiSsid"].as<const char*>());
-            if (doc["wifiPass"].is<const char*>())
-                prefs.putString(NVS_KEY_WIFI_PASS, doc["wifiPass"].as<const char*>());
+            // WiFi creds handled by WiFiManager, not NVS
             if (doc["mqttBroker"].is<const char*>())
                 prefs.putString(NVS_KEY_MQTT_HOST, doc["mqttBroker"].as<const char*>());
             if (doc["mqttPort"].is<int>())
@@ -149,8 +140,7 @@ bool provisioning_start_portal(const char* provisioningJson) {
     // Fallback: save individual fields
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, false);
-    prefs.putString(NVS_KEY_WIFI_SSID, p_ssid.getValue());
-    prefs.putString(NVS_KEY_WIFI_PASS, p_pass.getValue());
+    // WiFi SSID/pass stored by WiFiManager internally — not in Xentient NVS
     prefs.putString(NVS_KEY_MQTT_HOST, p_mqtt.getValue());
     prefs.putUShort(NVS_KEY_MQTT_PORT, (uint16_t)atoi(p_mport.getValue()));
     prefs.putString(NVS_KEY_NODE_ID, p_node.getValue());
@@ -164,10 +154,9 @@ bool provisioning_start_portal(const char* provisioningJson) {
 }
 
 void provisioning_clear() {
+    // Clear Xentient NVS namespace
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, false);
-    prefs.remove(NVS_KEY_WIFI_SSID);
-    prefs.remove(NVS_KEY_WIFI_PASS);
     prefs.remove(NVS_KEY_MQTT_HOST);
     prefs.remove(NVS_KEY_MQTT_PORT);
     prefs.remove(NVS_KEY_NODE_ID);
@@ -175,7 +164,13 @@ void provisioning_clear() {
     prefs.remove(NVS_KEY_WS_HOST);
     prefs.remove(NVS_KEY_WS_PORT);
     prefs.end();
-    Serial.println("[PROV] NVS config cleared (factory reset)");
+
+    // Clear WiFiManager's stored WiFi credentials
+    // WiFi.disconnect(true) erases SSID/password from NVS flash.
+    WiFi.disconnect(true, true);
+    delay(100);
+
+    Serial.println("[PROV] NVS + WiFi creds cleared (full factory reset)");
 }
 
 bool provisioning_check_factory_reset() {
