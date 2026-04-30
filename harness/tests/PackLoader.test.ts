@@ -21,6 +21,10 @@ function writeManifest(dir: string, packName: string, manifest: object): string 
 function makeValidManifest(overrides: Record<string, any> = {}): object {
   return {
     pack: { name: 'test-pack', version: '1.0.0', ...overrides.pack },
+    configurations: overrides.configurations ?? [
+      { name: 'default', displayName: 'Default', nodeAssignments: {}, coreSkills: ['greet'] },
+    ],
+    nodeSkills: overrides.nodeSkills ?? [],
     skills: overrides.skills ?? [
       {
         id: 'greet',
@@ -88,6 +92,8 @@ describe('PackLoader', () => {
     it('throws if skill ID starts with underscore', () => {
       writeManifest(tempDir, 'default', {
         pack: { name: 'bad-pack', version: '1.0.0' },
+        configurations: [],
+        nodeSkills: [],
         skills: [
           {
             id: '_reserved',
@@ -106,6 +112,8 @@ describe('PackLoader', () => {
       writeManifest(tempDir, 'pack-a', makeValidManifest());
       writeManifest(tempDir, 'pack-b', {
         pack: { name: 'pack-b', version: '2.0.0' },
+        configurations: [{ name: 'default', displayName: 'Default', nodeAssignments: {}, coreSkills: ['greet-b'] }],
+        nodeSkills: [],
         skills: [
           {
             id: 'greet-b',
@@ -248,6 +256,8 @@ describe('PackLoader', () => {
       // Update the manifest
       writeManifest(tempDir, 'default', {
         pack: { name: 'default', version: '2.0.0' },
+        configurations: [{ name: 'default', displayName: 'Default', nodeAssignments: {}, coreSkills: ['greet'] }],
+        nodeSkills: [],
         skills: [
           {
             id: 'greet',

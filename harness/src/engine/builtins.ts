@@ -1,11 +1,12 @@
 import { CoreSkill } from '../shared/types';
 
-/** PIR motion → wake from sleep to listen */
+/** PIR motion → wake from dormant to running (config activation) */
 export const PIR_WAKE: CoreSkill = {
   id: '_pir-wake',
   displayName: 'PIR Wake',
   enabled: true,
   spaceId: '*',
+  configFilter: '*',
   trigger: { type: 'event', event: 'motion_detected' },
   priority: 0,
   actions: [{ type: 'set_mode', mode: 'listen' }],
@@ -21,6 +22,7 @@ export const SENSOR_TELEMETRY: CoreSkill = {
   displayName: 'Sensor Telemetry',
   enabled: true,
   spaceId: '*',
+  configFilter: '*',
   trigger: { type: 'interval', everyMs: 30_000 },
   priority: 100,
   actions: [{ type: 'log', message: 'sensor-telemetry' }],
@@ -46,6 +48,7 @@ export const DETERMINE_SKILL: CoreSkill = {
     priority: 'urgent',
     cooldownMs: 0,
   },
+  configFilter: '*',
   source: 'builtin',
   cooldownMs: 0,
   fireCount: 0,

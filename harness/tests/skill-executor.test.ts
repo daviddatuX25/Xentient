@@ -15,7 +15,7 @@ const mockModeManager = {
 };
 const mockMqttClient = { publish: vi.fn(), on: vi.fn(), nodeId: 'node-01', disconnect: vi.fn() };
 const mockMcpServer = {
-  notification: vi.fn().mockResolvedValue(undefined),
+  server: { notification: vi.fn().mockResolvedValue(undefined) },
 };
 const mockSensors = () => ({ temperature: 25, humidity: 60, motion: false });
 
@@ -124,7 +124,7 @@ describe('SkillExecutor', () => {
     });
     executor.registerSkill(skill);
     executor.handleEvent('motion_detected');
-    expect(mockMcpServer.notification).toHaveBeenCalledWith(
+    expect(mockMcpServer.server.notification).toHaveBeenCalledWith(
       expect.objectContaining({ method: 'xentient/skill_escalated' })
     );
   });
@@ -142,7 +142,7 @@ describe('SkillExecutor', () => {
     });
     executor.registerSkill(skill);
     executor.handleEvent('motion_detected'); // motionCount is 0 (no increment_counter action)
-    expect(mockMcpServer.notification).not.toHaveBeenCalledWith(
+    expect(mockMcpServer.server.notification).not.toHaveBeenCalledWith(
       expect.objectContaining({ method: 'xentient/skill_escalated' })
     );
   });
@@ -165,10 +165,10 @@ describe('SkillExecutor', () => {
     expect(log.query({ skillId: 'test-skill' })).toHaveLength(1);
   });
 
-  it('switches behavioral mode', () => {
+  it('switches active configuration', () => {
     const { executor } = makeExecutor();
-    executor.switchMode('student');
-    expect(executor.getMode()).toBe('student');
+    executor.setActiveConfig('student');
+    expect(executor.getActiveConfig()).toBe('student');
   });
 
   it('emits skill_fired observability event', () => {

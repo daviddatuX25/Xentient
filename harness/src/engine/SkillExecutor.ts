@@ -42,7 +42,7 @@ export class SkillExecutor extends EventEmitter {
   private counterResetTimers: Map<string, NodeJS.Timeout> = new Map();
   private tickHandle: NodeJS.Timeout | null = null;
   private opts: SkillExecutorOptions;
-  private activeMode: string = 'default';
+  private activeConfig: string = 'default';
 
   constructor(opts: SkillExecutorOptions) {
     super();
@@ -74,15 +74,23 @@ export class SkillExecutor extends EventEmitter {
     logger.info({ spaceId: this.opts.spaceId }, 'SkillExecutor stopped');
   }
 
+  /** @deprecated Use setActiveConfig instead */
   switchMode(newMode: string): void {
-    const prev = this.activeMode;
-    this.activeMode = newMode;
-    this.modeHistory.push(newMode);
-    if (this.modeHistory.length > 20) this.modeHistory.shift();
-    logger.info({ spaceId: this.opts.spaceId, prev, newMode }, 'Behavioral mode switched');
+    this.setActiveConfig(newMode);
   }
 
-  getMode(): string { return this.activeMode; }
+  setActiveConfig(configName: string): void {
+    const prev = this.activeConfig;
+    this.activeConfig = configName;
+    this.modeHistory.push(configName);
+    if (this.modeHistory.length > 20) this.modeHistory.shift();
+    logger.info({ spaceId: this.opts.spaceId, prev, configName }, 'Configuration switched');
+  }
+
+  /** @deprecated Use getActiveConfig instead */
+  getMode(): string { return this.activeConfig; }
+
+  getActiveConfig(): string { return this.activeConfig; }
 
   /** Return a snapshot of all counter values. */
   getCounters(): Record<string, number> {
@@ -285,7 +293,7 @@ export class SkillExecutor extends EventEmitter {
     const logEntry: SkillLogEntry = {
       skillId: skill.id,
       spaceId: this.opts.spaceId,
-      mode: this.activeMode,
+      mode: this.activeConfig,
       firedAt: now,
       triggerData,
       actionsExecuted,
@@ -297,7 +305,7 @@ export class SkillExecutor extends EventEmitter {
       type: 'skill_fired',
       skillId: skill.id,
       spaceId: this.opts.spaceId,
-      mode: this.activeMode,
+      mode: this.activeConfig,
       trigger: skill.trigger.type,
       actionsExecuted,
       escalated: shouldEscalate,
@@ -383,8 +391,7 @@ export class SkillExecutor extends EventEmitter {
     };
     this.opts.onObservabilityEvent(event);
 
-    // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-    this.opts.mcpServer.notification({
+    this.opts.mcpServer.server.notification({
       method: SKILL_EVENTS.SKILL_ESCALATED,
       params: {
         skillId: skill.id,
@@ -393,7 +400,7 @@ export class SkillExecutor extends EventEmitter {
         context,
         priority: skill.escalation!.priority,
       },
-    }).catch((err: Error) => logger.error({ err, skillId: skill.id }, 'Failed to send skill_escalated notification'));
+    } as any).catch((err: Error) => logger.error({ err, skillId: skill.id }, 'Failed to send skill_escalated notification'));
 
     logger.info({ skillId: skill.id, spaceId: this.opts.spaceId }, 'Skill escalated to Brain');
   }
@@ -432,8 +439,7 @@ export class SkillExecutor extends EventEmitter {
       timeoutHandle,
     });
 
-    // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-    this.opts.mcpServer.notification({
+    this.opts.mcpServer.server.notification({
       method: SKILL_EVENTS.SKILL_CONFLICT,
       params: {
         conflictingSkills: skills.map(s => s.id),
@@ -441,13 +447,13 @@ export class SkillExecutor extends EventEmitter {
         triggerData,
         conflictGroup: group,
       },
-    }).catch((err: Error) => logger.error({ err, group }, 'Failed to send skill_conflict notification'));
+    } as any).catch((err: Error) => logger.error({ err, group }, 'Failed to send skill_conflict notification'));
   }
 
   private matchesSpace(skill: CoreSkill): boolean {
     const spaceMatch = skill.spaceId === '*' || skill.spaceId === this.opts.spaceId;
-    const modeMatch = !skill.modeFilter || skill.modeFilter === this.activeMode;
-    return spaceMatch && modeMatch;
+    const configMatch = !skill.configFilter || skill.configFilter === '*' || skill.configFilter === this.activeConfig;
+    return spaceMatch && configMatch;
   }
 
   private evaluateTrigger(trigger: Record<string, unknown>, ctx: Record<string, unknown>): boolean {

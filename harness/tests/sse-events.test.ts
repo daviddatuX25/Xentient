@@ -48,7 +48,7 @@ describe("SpaceManager lifecycle events", () => {
   let spaceManager: SpaceManager;
 
   beforeEach(() => {
-    const mockMcpServer = { notification: vi.fn().mockResolvedValue(undefined) };
+    const mockMcpServer = { server: { notification: vi.fn().mockResolvedValue(undefined) } };
     const mockModeManager = new ModeManager({ connected: true, publish: vi.fn(), on: vi.fn(), nodeId: 'test' } as any);
     const mockMqtt = { on: vi.fn(), publish: vi.fn(), connected: true };
     spaceManager = new SpaceManager(
@@ -63,7 +63,7 @@ describe("SpaceManager lifecycle events", () => {
     const listener = vi.fn();
     spaceManager.on('skill_registered', listener);
 
-    spaceManager.addSpace({ id: 'default', nodeBaseId: 'node-01', activePack: 'default', spaceMode: 'sleep', activeMode: 'default', integrations: [], sensors: [] });
+    spaceManager.addSpace({ id: 'default', nodes: [{ nodeId: 'node-01', role: 'base', hardware: ['motion', 'temperature'], state: 'dormant' }], activePack: 'default', activeConfig: 'default', availableConfigs: ['default'], integrations: [], sensors: [] });
     spaceManager.registerSkill({
       id: 'test-skill',
       displayName: 'Test Skill',
@@ -88,7 +88,7 @@ describe("SpaceManager lifecycle events", () => {
     const listener = vi.fn();
     spaceManager.on('skill_removed', listener);
 
-    spaceManager.addSpace({ id: 'default', nodeBaseId: 'node-01', activePack: 'default', spaceMode: 'sleep', activeMode: 'default', integrations: [], sensors: [] });
+    spaceManager.addSpace({ id: 'default', nodes: [{ nodeId: 'node-01', role: 'base', hardware: ['motion', 'temperature'], state: 'dormant' }], activePack: 'default', activeConfig: 'default', availableConfigs: ['default'], integrations: [], sensors: [] });
     spaceManager.registerSkill({
       id: 'removable-skill',
       displayName: 'Removable',
@@ -111,7 +111,7 @@ describe("SpaceManager lifecycle events", () => {
     const listener = vi.fn();
     spaceManager.on('skill_removed', listener);
 
-    spaceManager.addSpace({ id: 'default', nodeBaseId: 'node-01', activePack: 'default', spaceMode: 'sleep', activeMode: 'default', integrations: [], sensors: [] });
+    spaceManager.addSpace({ id: 'default', nodes: [{ nodeId: 'node-01', role: 'base', hardware: ['motion', 'temperature'], state: 'dormant' }], activePack: 'default', activeConfig: 'default', availableConfigs: ['default'], integrations: [], sensors: [] });
     spaceManager.removeSkill('nonexistent', 'default');
 
     expect(listener).not.toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe("SpaceManager lifecycle events", () => {
     const listener = vi.fn();
     spaceManager.on('skill_updated', listener);
 
-    spaceManager.addSpace({ id: 'default', nodeBaseId: 'node-01', activePack: 'default', spaceMode: 'sleep', activeMode: 'default', integrations: [], sensors: [] });
+    spaceManager.addSpace({ id: 'default', nodes: [{ nodeId: 'node-01', role: 'base', hardware: ['motion', 'temperature'], state: 'dormant' }], activePack: 'default', activeConfig: 'default', availableConfigs: ['default'], integrations: [], sensors: [] });
     spaceManager.registerSkill({
       id: 'patchable-skill',
       displayName: 'Patchable',
@@ -146,7 +146,7 @@ describe("SpaceManager lifecycle events", () => {
     const listener = vi.fn();
     spaceManager.on('skill_updated', listener);
 
-    spaceManager.addSpace({ id: 'default', nodeBaseId: 'node-01', activePack: 'default', spaceMode: 'sleep', activeMode: 'default', integrations: [], sensors: [] });
+    spaceManager.addSpace({ id: 'default', nodes: [{ nodeId: 'node-01', role: 'base', hardware: ['motion', 'temperature'], state: 'dormant' }], activePack: 'default', activeConfig: 'default', availableConfigs: ['default'], integrations: [], sensors: [] });
     spaceManager.registerSkill({
       id: 'disable-skill',
       displayName: 'Disable Me',
@@ -180,6 +180,8 @@ describe("PackLoader lifecycle events", () => {
     tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'pack-test-'));
     const manifest = {
       pack: { name: 'test-pack', version: '1.0.0' },
+      configurations: [{ name: 'default', displayName: 'Default', nodeAssignments: {}, coreSkills: ['test-pack-skill'] }],
+      nodeSkills: [],
       skills: [{
         id: 'test-pack-skill',
         displayName: 'Test Pack Skill',
@@ -330,7 +332,7 @@ describe("SkillExecutor.getCounters", () => {
     const { SkillExecutor } = await import("../src/engine/SkillExecutor");
     const mockModeManager = { getMode: vi.fn().mockReturnValue('listen'), on: vi.fn() };
     const mockMqtt = { connected: true, publish: vi.fn(), on: vi.fn() };
-    const mockMcpServer = { notification: vi.fn().mockResolvedValue(undefined) };
+    const mockMcpServer = { server: { notification: vi.fn().mockResolvedValue(undefined) } };
     const mockSkillLog = { append: vi.fn() };
 
     const executor = new SkillExecutor({

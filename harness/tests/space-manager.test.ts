@@ -4,7 +4,7 @@ import type { Space, CoreSkill } from '../src/shared/types';
 
 const mockModeManager = { getMode: vi.fn(() => 'listen'), setMode: vi.fn(), transition: vi.fn(() => true), on: vi.fn(), clearIdleTimer: vi.fn() };
 const mockMcpServer = {
-  notification: vi.fn().mockResolvedValue(undefined),
+  server: { notification: vi.fn().mockResolvedValue(undefined) },
 };
 const mockMqttClient = { publish: vi.fn(), on: vi.fn(), nodeId: 'node-01', disconnect: vi.fn() };
 const mockSensors = () => ({ temperature: 22, humidity: 55, motion: false });
@@ -12,10 +12,10 @@ const mockSensors = () => ({ temperature: 22, humidity: 55, motion: false });
 function makeSpace(id: string): Space {
   return {
     id,
-    nodeBaseId: `node-${id}`,
+    nodes: [{ nodeId: `node-${id}`, role: 'base', hardware: ['motion', 'temperature'], state: 'dormant' as const }],
     activePack: 'default',
-    spaceMode: 'listen',
-    activeMode: 'default',
+    activeConfig: 'default',
+    availableConfigs: ['default'],
     integrations: [],
     sensors: ['temperature', 'humidity'],
   };
@@ -65,11 +65,11 @@ describe('SpaceManager', () => {
     expect(manager.listSkills('living').some(s => s.id === 'class-reminder')).toBe(false);
   });
 
-  it('switches mode and broadcasts xentient/mode_switched', () => {
+  it('activates config and broadcasts xentient/config_changed', () => {
     manager.addSpace(makeSpace('study'));
-    manager.switchMode('study', 'student');
-    expect(mockMcpServer.notification).toHaveBeenCalledWith(
-      expect.objectContaining({ method: 'xentient/mode_switched' })
+    manager.activateConfig('study', 'student');
+    expect(mockMcpServer.server.notification).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'xentient/config_changed' })
     );
   });
 

@@ -21,6 +21,7 @@ fs.mkdirSync(SCHEMAS_DIR, { recursive: true });
 let count = 0;
 
 for (const [name, schema] of Object.entries(ALL_CONTRACT_SCHEMAS)) {
+  // @ts-expect-error Zod union schema exceeds TypeScript's type instantiation depth limit
   const jsonSchema = zodToJsonSchema(schema, { target: "draft-7" });
   const outputPath = path.join(SCHEMAS_DIR, `${name}.json`);
   fs.writeFileSync(outputPath, JSON.stringify(jsonSchema, null, 2));

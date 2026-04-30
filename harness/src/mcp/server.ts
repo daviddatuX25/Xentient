@@ -116,7 +116,8 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
       }).optional().describe('When and how to escalate to Brain'),
       priority: z.number().default(10),
       cooldownMs: z.number().default(0),
-      modeFilter: z.string().optional().describe('Only activate in this behavioral mode'),
+      configFilter: z.string().optional().describe('Only activate in this configuration'),
+      modeFilter: z.string().optional().describe('Only activate in this configuration (deprecated: use configFilter)'),
     } as any,
     async (params: any) => handlers.xentient_register_skill(params),
   );
@@ -131,7 +132,8 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
       cooldownMs: z.number().optional(),
       actions: z.array(z.record(z.unknown())).optional(),
       escalation: z.record(z.unknown()).optional(),
-      modeFilter: z.string().optional(),
+      configFilter: z.string().optional().describe('Only activate in this configuration'),
+      modeFilter: z.string().optional().describe('Deprecated: use configFilter'),
     } as any,
     async (params: any) => handlers.xentient_update_skill(params),
   );
@@ -180,12 +182,22 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
 
   server.tool(
     'xentient_switch_mode',
-    'Change the active behavioral Mode for a Space (student/family/developer/default/custom)',
+    'Change the active Configuration for a Space. Deprecated: use xentient_activate_config.',
     {
       spaceId: z.string(),
-      mode: z.string().describe('New behavioral mode name'),
+      mode: z.string().describe('Configuration name to activate'),
     } as any,
     async ({ spaceId, mode }: { spaceId: string; mode: string }) => handlers.xentient_switch_mode({ spaceId, mode }),
+  );
+
+  server.tool(
+    'xentient_activate_config',
+    'Activate a named Configuration for a Space (student/family/developer/default/custom)',
+    {
+      spaceId: z.string(),
+      config: z.string().describe('Configuration name to activate'),
+    } as any,
+    async ({ spaceId, config }: { spaceId: string; config: string }) => handlers.xentient_activate_config({ spaceId, config }),
   );
 
   server.tool(

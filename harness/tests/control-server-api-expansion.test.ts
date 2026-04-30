@@ -98,7 +98,7 @@ describe("ControlServer 08-01 API Expansion", () => {
         registerSkill: registerSkillFn,
         removeSkill: removeSkillFn,
         updateSkill: updateSkillFn,
-        switchMode: switchModeFn,
+        activateConfig: switchModeFn,
         skillLog: { append: vi.fn(), query: skillLogQueryFn, attachEscalationResponse: vi.fn() },
       } as any,
       eventBridge: {
@@ -168,17 +168,24 @@ describe("ControlServer 08-01 API Expansion", () => {
       const res = await fetch(`${baseUrl}/api/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: 'new-skill', displayName: 'New Skill' }),
+        body: JSON.stringify({
+          id: 'new-skill',
+          displayName: 'New Skill',
+          trigger: { type: 'event', event: 'test_event' },
+          actions: [{ type: 'log', message: 'hello' }],
+        }),
       });
       expect(res.status).toBe(201);
       const data = await res.json();
       expect(data.ok).toBe(true);
       expect(data.skill.id).toBe('new-skill');
       expect(data.skill.source).toBe('brain');
+      expect(data.skill.trigger).toEqual({ type: 'event', event: 'test_event' });
+      expect(data.skill.actions).toEqual([{ type: 'log', message: 'hello' }]);
       expect(registerSkillFn).toHaveBeenCalled();
     });
 
-    it("returns 400 when id is missing", async () => {
+    it("returns 400 when required fields are missing", async () => {
       const res = await fetch(`${baseUrl}/api/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,14 +193,41 @@ describe("ControlServer 08-01 API Expansion", () => {
       });
       expect(res.status).toBe(400);
       const data = await res.json();
-      expect(data.error).toContain('Skill ID is required');
+      expect(data.error).toContain('Validation failed');
+    });
+
+    it("returns 400 when trigger is missing", async () => {
+      const res = await fetch(`${baseUrl}/api/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 'no-trigger', displayName: 'No Trigger' }),
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain('Validation failed');
+    });
+
+    it("returns 400 when actions is empty or missing", async () => {
+      const res = await fetch(`${baseUrl}/api/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 'no-actions', displayName: 'No Actions', trigger: { type: 'event', event: 'test' }, actions: [] }),
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain('Validation failed');
     });
 
     it("returns 409 when skill already exists", async () => {
       const res = await fetch(`${baseUrl}/api/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: '_pir-wake' }),
+        body: JSON.stringify({
+          id: '_pir-wake',
+          displayName: 'Duplicate',
+          trigger: { type: 'event', event: 'motion' },
+          actions: [{ type: 'log', message: 'dup' }],
+        }),
       });
       expect(res.status).toBe(409);
       const data = await res.json();
@@ -338,25 +372,25 @@ describe("ControlServer 08-01 API Expansion", () => {
     });
   });
 
-  describe("POST /api/spaces/:id/mode", () => {
-    it("sets space mode and returns 200", async () => {
-      const res = await fetch(`${baseUrl}/api/spaces/default/mode`, {
+  describe("POST /api/spaces/:id/config", () => {
+    it("activates config and returns 200", async () => {
+      const res = await fetch(`${baseUrl}/api/spaces/default/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: 'active' }),
+        body: JSON.stringify({ config: 'active' }),
       });
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.ok).toBe(true);
-      expect(data.mode).toBe('active');
+      expect(data.activeConfig).toBe('active');
       expect(switchModeFn).toHaveBeenCalledWith('default', 'active');
     });
 
-    it("returns 400 for invalid mode", async () => {
-      const res = await fetch(`${baseUrl}/api/spaces/default/mode`, {
+    it("returns 400 for missing config", async () => {
+      const res = await fetch(`${baseUrl}/api/spaces/default/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: 'invalid' }),
+        body: JSON.stringify({ config: '' }),
       });
       expect(res.status).toBe(400);
     });

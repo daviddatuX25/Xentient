@@ -57,24 +57,22 @@ export class SpaceManager extends EventEmitter {
 
     // Wire LCD/chime emission from executor to MCP notifications
     executor.on('lcd', ({ line1, line2 }: { line1: string; line2: string }) => {
-      // @ts-expect-error McpServer.notification() exists at runtime via Protocol
-      this.mcpServer.notification({
+        this.mcpServer.server.notification({
         method: 'xentient/internal_lcd',
         params: { spaceId: space.id, line1, line2 },
-      }).catch((err: Error) => logger.error({ err }, 'Failed to send internal_lcd notification'));
+      } as any).catch((err: Error) => logger.error({ err }, 'Failed to send internal_lcd notification'));
     });
 
     executor.on('chime', ({ preset }: { preset: string }) => {
-      // @ts-expect-error McpServer.notification() exists at runtime via Protocol
-      this.mcpServer.notification({
+        this.mcpServer.server.notification({
         method: 'xentient/internal_chime',
         params: { spaceId: space.id, preset },
-      }).catch((err: Error) => logger.error({ err }, 'Failed to send internal_chime notification'));
+      } as any).catch((err: Error) => logger.error({ err }, 'Failed to send internal_chime notification'));
     });
 
     this.executors.set(space.id, executor);
     executor.start();
-    logger.info({ spaceId: space.id, mode: space.activeMode }, 'Space added and executor started');
+    logger.info({ spaceId: space.id, activeConfig: space.activeConfig }, 'Space added and executor started');
   }
 
   removeSpace(id: string): boolean {
@@ -157,32 +155,38 @@ export class SpaceManager extends EventEmitter {
     return executor?.getCounters() ?? {};
   }
 
+  /** @deprecated Use activateConfig instead */
   switchMode(spaceId: string, newMode: string): boolean {
+    return this.activateConfig(spaceId, newMode);
+  }
+
+  activateConfig(spaceId: string, configName: string): boolean {
     const executor = this.getExecutor(spaceId);
     if (!executor) return false;
     const space = this.spaces.get(spaceId);
-    if (space) space.activeMode = newMode;
-    const prev = executor.getMode();
-    executor.switchMode(newMode);
-    // @ts-expect-error McpServer.notification() exists at runtime via Protocol
-    this.mcpServer.notification({
-      method: SKILL_EVENTS.MODE_SWITCHED,
+    if (space) space.activeConfig = configName;
+    const prev = executor.getActiveConfig();
+    executor.setActiveConfig(configName);
+    this.mcpServer.server.notification({
+      method: SKILL_EVENTS.CONFIG_CHANGED,
       params: {
         spaceId,
-        previousMode: prev,
-        newMode,
+        previousConfig: prev,
+        newConfig: configName,
         activeSkills: executor.listSkills(spaceId).filter(s => s.enabled).map(s => s.id),
       },
-    }).catch((err: Error) => logger.error({ err, spaceId }, 'Failed to send mode_switched notification'));
+    } as any).catch((err: Error) => logger.error({ err, spaceId }, 'Failed to send config_changed notification'));
     return true;
   }
 
+  /** @deprecated Use activateConfig instead — kept for ModeManager bridge compat */
   updateSpaceMode(spaceId: string, mode: string): void {
+    // Sync the first node's state with the mode transition
     const space = this.spaces.get(spaceId);
     if (!space) return;
-    const prev = space.spaceMode;
+    const prev = space.activeConfig;
     if (prev === mode) return;
-    space.spaceMode = mode as import('../shared/contracts').Mode;
+    space.activeConfig = mode;
     this.emit('spaceModeChanged', { spaceId, from: prev, to: mode });
   }
 
@@ -213,12 +217,11 @@ export class SpaceManager extends EventEmitter {
   }
 
   private broadcastObservabilityEvent(event: ObservabilityEvent): void {
-    // @ts-expect-error McpServer.notification() exists at runtime via Protocol
-    this.mcpServer.notification({
+    this.mcpServer.server.notification({
       method: SKILL_EVENTS[event.type === 'skill_fired' ? 'SKILL_FIRED'
         : event.type === 'skill_escalated' ? 'SKILL_ESCALATED' : 'SKILL_CONFLICT'],
       params: event,
-    }).catch((err: Error) => logger.error({ err, eventType: event.type }, 'Failed to broadcast observability event'));
+    } as any).catch((err: Error) => logger.error({ err, eventType: event.type }, 'Failed to broadcast observability event'));
 
     // SpaceManager extends EventEmitter — emit directly for local consumers
     this.emit(event.type, event);

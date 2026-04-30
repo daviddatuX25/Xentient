@@ -194,8 +194,14 @@ export function createToolHandlers(deps: McpToolDeps) {
 
     xentient_switch_mode: async ({ spaceId, mode }: { spaceId: string; mode: string }) => {
       if (!deps.spaceManager) return { content: [{ type: 'text' as const, text: 'SpaceManager not initialized' }], isError: true as const };
-      const ok = deps.spaceManager.switchMode(spaceId, mode);
-      return { content: [{ type: 'text' as const, text: ok ? `Space ${spaceId} switched to mode "${mode}"` : `Space ${spaceId} not found` }] };
+      const ok = deps.spaceManager.activateConfig(spaceId, mode);
+      return { content: [{ type: 'text' as const, text: ok ? `Space ${spaceId} activated config "${mode}"` : `Space ${spaceId} not found` }] };
+    },
+
+    xentient_activate_config: async ({ spaceId, config }: { spaceId: string; config: string }) => {
+      if (!deps.spaceManager) return { content: [{ type: 'text' as const, text: 'SpaceManager not initialized' }], isError: true as const };
+      const ok = deps.spaceManager.activateConfig(spaceId, config);
+      return { content: [{ type: 'text' as const, text: ok ? `Space ${spaceId} activated config "${config}"` : `Space ${spaceId} not found` }] };
     },
 
     xentient_resolve_conflict: async (resolution: { execute: string[]; skip: string[]; reason: string; conflictGroup: string }) => {

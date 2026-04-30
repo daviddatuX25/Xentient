@@ -18,7 +18,7 @@ const mockModeManager = {
 };
 
 const mockMqttClient = { publish: vi.fn(), on: vi.fn(), nodeId: 'node-01', disconnect: vi.fn() };
-const mockMcpServer = { notification: vi.fn().mockResolvedValue(undefined) };
+const mockMcpServer = { server: { notification: vi.fn().mockResolvedValue(undefined) } };
 const mockSensors = () => ({ temperature: 25, humidity: 60, motion: false });
 
 function makeExecutor(spaceId = 'test-space') {
@@ -260,18 +260,18 @@ describe('G2 — Composite trigger evaluation', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// G3 — modeFilter enforcement
+// G3 — configFilter enforcement
 // ═══════════════════════════════════════════════════════════════════
 
-describe('G3 — modeFilter enforcement', () => {
+describe('G3 — configFilter enforcement', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('skill with modeFilter fires when activeMode matches', () => {
+  it('skill with configFilter fires when activeConfig matches', () => {
     const { executor } = makeExecutor();
-    executor.switchMode('student');
+    executor.setActiveConfig('student');
     executor.registerSkill(makeSkill({
       id: 'student-skill',
-      modeFilter: 'student',
+      configFilter: 'student',
     }));
 
     executor.handleEvent('motion_detected', { source: 'pir' });
@@ -282,12 +282,12 @@ describe('G3 — modeFilter enforcement', () => {
     expect(skill!.fireCount).toBe(1);
   });
 
-  it('skill with modeFilter does NOT fire when activeMode differs', () => {
+  it('skill with configFilter does NOT fire when activeConfig differs', () => {
     const { executor } = makeExecutor();
-    executor.switchMode('family');
+    executor.setActiveConfig('family');
     executor.registerSkill(makeSkill({
       id: 'student-skill',
-      modeFilter: 'student',
+      configFilter: 'student',
     }));
 
     executor.handleEvent('motion_detected', { source: 'pir' });
@@ -298,12 +298,12 @@ describe('G3 — modeFilter enforcement', () => {
     expect(skill!.fireCount).toBe(0);
   });
 
-  it('skill without modeFilter fires in all modes', () => {
+  it('skill without configFilter fires in all configs', () => {
     const { executor } = makeExecutor();
-    executor.switchMode('family');
+    executor.setActiveConfig('family');
     executor.registerSkill(makeSkill({
       id: 'universal-skill',
-      // no modeFilter
+      // no configFilter
     }));
 
     executor.handleEvent('motion_detected', { source: 'pir' });

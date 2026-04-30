@@ -200,7 +200,7 @@ describe('SkillPersistence', () => {
         displayName: 'Round Trip Skill',
         trigger: { type: 'event', event: 'motion_detected' },
         actions: [{ type: 'log', message: 'hello' }],
-        modeFilter: 'student',
+        configFilter: 'student',
         cooldownMs: 5000,
         priority: 42,
       });
@@ -211,7 +211,7 @@ describe('SkillPersistence', () => {
       expect(loaded.id).toBe('test-roundtrip');
       expect(loaded.displayName).toBe('Round Trip Skill');
       expect(loaded.source).toBe('brain');
-      expect(loaded.modeFilter).toBe('student');
+      expect(loaded.configFilter).toBe('student');
       expect(loaded.cooldownMs).toBe(5000);
       expect(loaded.priority).toBe(42);
     });

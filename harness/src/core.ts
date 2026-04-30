@@ -30,8 +30,8 @@ async function main() {
     process.env.MQTT_BROKER_URL ?? config.mqtt.brokerUrl,
     config.nodeId ?? "node-01",
   );
-  const audioServer = new AudioServer(config.audio.wsPort);
-  const cameraServer = new CameraServer(config.camera.wsPort, config.camera.idleTimeoutMs);
+  const audioServer = new AudioServer(parseInt(process.env.WS_PORT ?? String(config.audio.wsPort), 10));
+  const cameraServer = new CameraServer(parseInt(process.env.CAMERA_WS_PORT ?? String(config.camera.wsPort), 10), config.camera.idleTimeoutMs);
 
   // Start servers with port auto-fallback
   try {
@@ -94,10 +94,10 @@ async function main() {
   // Default Space (single-node v1)
   const defaultSpace: Space = {
     id: 'default',
-    nodeBaseId: config.nodeId ?? 'node-01',
+    nodes: [{ nodeId: config.nodeId ?? 'node-01', role: 'base', hardware: ['motion', 'temperature', 'humidity', 'audio', 'camera'], state: 'dormant' as const }],
     activePack: 'default',
-    spaceMode: modeManager.getMode(),
-    activeMode: 'default',
+    activeConfig: 'default',
+    availableConfigs: ['default'],
     integrations: [],
     sensors: ['temperature', 'humidity', 'motion'],
   };
@@ -172,7 +172,9 @@ async function main() {
   // so placing it before those components is safe.
   modeManager.on("modeChange", ({ from, to }) => {
     spaceManager.updateSpaceMode('default', to);
-    logger.info({ from, to }, 'Mode transition — SpaceMode synced');
+    // Also sync the config name with mode name for backward compatibility
+    spaceManager.activateConfig('default', to);
+    logger.info({ from, to }, 'Mode transition — SpaceMode + activeConfig synced');
   });
 
   // --- EventBridge: declarative MQTT/Mode → Skill event routing ---

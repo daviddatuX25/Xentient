@@ -12,7 +12,7 @@ import { SkillLog } from "../engine/SkillLog";
 import { MicroRouter } from "./MicroRouter";
 import { listenWithFallback } from "./port-fallback";
 import type { CoreSkill, SensorCache } from "../shared/types";
-import { MODE_TRANSITIONS, PERIPHERAL_IDS } from "../shared/contracts";
+import { MODE_TRANSITIONS, PERIPHERAL_IDS, CreateSkillApiSchema } from "../shared/contracts";
 import type { EventMapping } from "./EventBridge";
 import pino from "pino";
 
@@ -80,7 +80,7 @@ export class ControlServer extends EventEmitter {
   /** Fields that may be updated via PATCH /api/skills/:id */
   private static PATCHABLE_FIELDS = new Set([
     'enabled', 'displayName', 'trigger', 'actions', 'priority',
-    'cooldownMs', 'modeFilter', 'escalation', 'collect',
+    'cooldownMs', 'configFilter', 'escalation', 'collect',
   ]);
 
   constructor(deps: ControlServerDeps, port: number) {
@@ -135,7 +135,7 @@ export class ControlServer extends EventEmitter {
       .add("POST", "/api/packs/:name/reload", this.handleReloadPack.bind(this))
       // Spaces
       .add("GET", "/api/spaces", this.handleListSpaces.bind(this))
-      .add("POST", "/api/spaces/:id/mode", this.handleSetSpaceMode.bind(this))
+      .add("POST", "/api/spaces/:id/config", this.handleActivateConfig.bind(this))
       // Event Mappings
       .add("GET", "/api/event-mappings", this.handleListEventMappings.bind(this))
       .add("POST", "/api/event-mappings", this.handleAddEventMapping.bind(this))
@@ -350,7 +350,7 @@ export class ControlServer extends EventEmitter {
       fireCount: skill.fireCount,
       lastFiredAt: skill.lastFiredAt,
       escalationCount: skill.escalationCount,
-      modeFilter: skill.modeFilter,
+      configFilter: skill.configFilter,
       _pack: skill._pack,
     };
   }
@@ -372,33 +372,38 @@ export class ControlServer extends EventEmitter {
 
   private async handleCreateSkill(req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
     const body = await this.parseBody(req) as Record<string, unknown>;
-    const id = String(body.id ?? '');
-    if (!id) {
-      this.sendJSON(res, 400, { error: 'Skill ID is required' });
+
+    // Strict schema validation
+    const parsed = CreateSkillApiSchema.safeParse(body);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+      this.sendJSON(res, 400, { error: `Validation failed: ${issues}` });
       return;
     }
+    const data = parsed.data;
+
     // Check for existing skill — 409 Conflict
-    const existing = this.deps.spaceManager.listSkills().find(s => s.id === id);
+    const existing = this.deps.spaceManager.listSkills().find(s => s.id === data.id);
     if (existing) {
-      this.sendJSON(res, 409, { error: `Skill '${id}' already exists (source: ${existing.source}). Use PATCH to update.` });
+      this.sendJSON(res, 409, { error: `Skill '${data.id}' already exists (source: ${existing.source}). Use PATCH to update.` });
       return;
     }
-    // Construct CoreSkill from request body
+
     const skill: CoreSkill = {
-      id,
-      displayName: String(body.displayName ?? id),
-      enabled: body.enabled !== undefined ? Boolean(body.enabled) : true,
-      spaceId: String(body.spaceId ?? '*'),
-      trigger: body.trigger as CoreSkill['trigger'] ?? { type: 'event', event: 'manual_trigger' },
-      priority: Number(body.priority ?? 50),
-      actions: Array.isArray(body.actions) ? body.actions as CoreSkill['actions'] : [],
-      collect: Array.isArray(body.collect) ? body.collect as CoreSkill['collect'] : undefined,
-      escalation: body.escalation as CoreSkill['escalation'] ?? undefined,
+      id: data.id,
+      displayName: data.displayName,
+      enabled: data.enabled ?? true,
+      spaceId: data.spaceId ?? '*',
+      trigger: data.trigger as CoreSkill['trigger'],
+      priority: data.priority ?? 50,
+      actions: data.actions as CoreSkill['actions'],
+      collect: data.collect as CoreSkill['collect'] ?? undefined,
+      escalation: data.escalation as CoreSkill['escalation'] ?? undefined,
       source: 'brain',
-      cooldownMs: Number(body.cooldownMs ?? 0),
+      cooldownMs: data.cooldownMs ?? 0,
       fireCount: 0,
       escalationCount: 0,
-      modeFilter: body.modeFilter as CoreSkill['modeFilter'] ?? undefined,
+      configFilter: data.configFilter as CoreSkill['configFilter'] ?? undefined,
     };
     this.deps.spaceManager.registerSkill(skill);
     this.sendJSON(res, 201, { ok: true, skill: this.serializeSkill(skill) });
@@ -503,12 +508,12 @@ export class ControlServer extends EventEmitter {
     this.sendJSON(res, 200, spaces);
   }
 
-  private async handleSetSpaceMode(req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
+  private async handleActivateConfig(req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {
     const { id } = params;
     const body = await this.parseBody(req) as Record<string, unknown>;
-    const mode = String(body.mode ?? '');
-    if (!mode || !['sleep', 'listen', 'active', 'record'].includes(mode)) {
-      this.sendJSON(res, 400, { error: 'Invalid mode. Use: sleep, listen, active, record' });
+    const config = String(body.config ?? body.mode ?? '');
+    if (!config) {
+      this.sendJSON(res, 400, { error: 'Config name is required' });
       return;
     }
     // Check that the space exists
@@ -518,8 +523,8 @@ export class ControlServer extends EventEmitter {
       this.sendJSON(res, 404, { error: `Space '${id}' not found` });
       return;
     }
-    this.deps.spaceManager.switchMode(id, mode);
-    this.sendJSON(res, 200, { ok: true, spaceId: id, mode });
+    this.deps.spaceManager.activateConfig(id, config);
+    this.sendJSON(res, 200, { ok: true, spaceId: id, activeConfig: config });
   }
 
   // ── Event Mapping Endpoints ──────────────────────────────────────────

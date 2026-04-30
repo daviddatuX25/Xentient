@@ -84,7 +84,7 @@ export class PackLoader extends EventEmitter {
       cooldownMs: ps.cooldownMs ?? 0,
       fireCount: 0,
       escalationCount: 0,
-      modeFilter: ps.modeFilter,
+      configFilter: ps.configFilter,
       _pack: packName,
     };
   }

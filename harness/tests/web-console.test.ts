@@ -102,7 +102,7 @@ describe("Web Console Integration Tests", () => {
         registerSkill: registerSkillFn,
         removeSkill: removeSkillFn,
         updateSkill: updateSkillFn,
-        switchMode: switchModeFn,
+        activateConfig: switchModeFn,
         skillLog: { append: vi.fn(), query: skillLogQueryFn, attachEscalationResponse: vi.fn() },
       } as any,
       eventBridge: {
@@ -169,18 +169,39 @@ describe("Web Console Integration Tests", () => {
       const res = await fetch(`${baseUrl}/api/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: 'test-skill', displayName: 'Test' }),
+        body: JSON.stringify({
+          id: 'test-skill',
+          displayName: 'Test',
+          trigger: { type: 'event', event: 'test_event' },
+          actions: [{ type: 'log', message: 'test' }],
+        }),
       });
       expect(res.status).toBe(201);
       const data = await res.json();
       expect(data.skill.source).toBe('brain');
     });
 
+    it("returns 400 for missing required fields", async () => {
+      const res = await fetch(`${baseUrl}/api/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 'incomplete' }),
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain('Validation failed');
+    });
+
     it("returns 409 for existing skill ID", async () => {
       const res = await fetch(`${baseUrl}/api/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: '_pir-wake' }),
+        body: JSON.stringify({
+          id: '_pir-wake',
+          displayName: 'Duplicate',
+          trigger: { type: 'event', event: 'motion' },
+          actions: [{ type: 'log', message: 'dup' }],
+        }),
       });
       expect(res.status).toBe(409);
       const data = await res.json();
@@ -311,21 +332,21 @@ describe("Web Console Integration Tests", () => {
   });
 
   describe("POST /api/spaces/:id/mode", () => {
-    it("switches behavioral mode", async () => {
-      const res = await fetch(`${baseUrl}/api/spaces/default/mode`, {
+    it("activates config", async () => {
+      const res = await fetch(`${baseUrl}/api/spaces/default/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: 'active' }),
+        body: JSON.stringify({ config: 'active' }),
       });
       expect(res.status).toBe(200);
       expect(switchModeFn).toHaveBeenCalledWith('default', 'active');
     });
 
-    it("returns 400 for invalid mode", async () => {
-      const res = await fetch(`${baseUrl}/api/spaces/default/mode`, {
+    it("returns 400 for missing config", async () => {
+      const res = await fetch(`${baseUrl}/api/spaces/default/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: 'invalid' }),
+        body: JSON.stringify({ config: '' }),
       });
       expect(res.status).toBe(400);
     });
