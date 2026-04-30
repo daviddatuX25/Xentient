@@ -144,8 +144,11 @@ static unsigned long lastBmeMs       = 0;
 static float rounded2(float v) { return round(v * 100.0F) / 100.0F; }
 
 static void work_task(void* /*pvParameters*/) {
-    // Register with ESP32 task watchdog (15s timeout)
-    esp_task_wdt_add(nullptr);
+    // Register with ESP32 task watchdog (5s timeout, panic-on-timeout)
+    esp_err_t wdt_err = esp_task_wdt_add(nullptr);
+    if (wdt_err != ESP_OK) {
+        Serial.printf("[WORK] WDT add failed: %d\n", wdt_err);
+    }
     esp_task_wdt_reset();
     Serial.println("[WORK] Task started on core " + String(xPortGetCoreID()));
 
@@ -346,6 +349,10 @@ void setup() {
     pinMode(PIN_PIR_INT, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PIN_PIR_INT), pir_isr, RISING);
     Serial.printf("[BOOT] PIR ISR attached on GPIO%d\n", PIN_PIR_INT);
+
+    // -- Initialize task watchdog (5s timeout, panic-on-timeout) --
+    esp_task_wdt_init(5, true);
+    Serial.println("[BOOT] Task watchdog initialized: 5s timeout, panic on timeout");
 
     // -- Create Config Task (Core 0, low priority, 3KB stack) --
     xTaskCreatePinnedToCore(

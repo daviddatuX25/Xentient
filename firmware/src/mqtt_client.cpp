@@ -112,33 +112,39 @@ static void handle_profile_set(byte* payload, unsigned int length) {
         return;
     }
 
-    // -- Build pendingProfile from parsed JSON --
+    // -- Snapshot activeProfile for default values (short critical section) --
+    NodeProfile snap;
+    portENTER_CRITICAL(&profileMux);
+    memcpy(&snap, (const void*)&activeProfile, sizeof(NodeProfile));
+    portEXIT_CRITICAL(&profileMux);
+
+    // -- Build incoming profile OUTSIDE critical section --
     NodeProfile incoming;
     memset(&incoming, 0, sizeof(NodeProfile));
     strncpy(incoming.profile_id, profile_id, sizeof(incoming.profile_id) - 1);
 
-    // Optional fields with defaults from current activeProfile if missing
-    portENTER_CRITICAL(&profileMux);
-    incoming.pir_interval_ms = doc["pir_interval_ms"] | activeProfile.pir_interval_ms;
+    // Optional fields with defaults from snapshot if missing
+    incoming.pir_interval_ms = doc["pir_interval_ms"] | snap.pir_interval_ms;
     incoming.mic_mode         = doc["mic_mode"].is<int>()
                                 ? (uint8_t)doc["mic_mode"].as<int>()
-                                : activeProfile.mic_mode;
-    incoming.bme_interval_ms = doc["bme_interval_ms"] | activeProfile.bme_interval_ms;
+                                : snap.mic_mode;
+    incoming.bme_interval_ms = doc["bme_interval_ms"] | snap.bme_interval_ms;
     incoming.camera_mode      = doc["camera_mode"].is<int>()
                                 ? (uint8_t)doc["camera_mode"].as<int>()
-                                : activeProfile.camera_mode;
+                                : snap.camera_mode;
     incoming.lcd_face         = doc["lcd_face"].is<int>()
                                 ? (uint8_t)doc["lcd_face"].as<int>()
-                                : activeProfile.lcd_face;
+                                : snap.lcd_face;
     incoming.event_mask       = doc["event_mask"].is<int>()
                                 ? (uint16_t)doc["event_mask"].as<int>()
-                                : activeProfile.event_mask;
+                                : snap.event_mask;
 
     // Store profileId immediately for ack echo (8.5)
     strncpy(lastReceivedProfileId, profile_id, sizeof(lastReceivedProfileId) - 1);
     lastReceivedProfileId[sizeof(lastReceivedProfileId) - 1] = '\0';
 
-    // Copy to pendingProfile and set flag
+    // -- Only the final copy needs the critical section --
+    portENTER_CRITICAL(&profileMux);
     memcpy((void*)&pendingProfile, &incoming, sizeof(NodeProfile));
     profileUpdateFlag = true;
     portEXIT_CRITICAL(&profileMux);
