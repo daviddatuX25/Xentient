@@ -142,11 +142,12 @@ static constexpr const char* MQTT_CLIENT_ID = "xentient-node-01";
 static constexpr const char* NODE_BASE_ID   = "node-01";
 static constexpr const char* SPACE_ID       = "living-room";
 
-// --- Broker / WiFi (override before flashing) ---
+// --- Broker (override before flashing) ---
 static constexpr const char* MQTT_BROKER_ADDR = "10.22.25.106";
 static constexpr uint16_t    MQTT_BROKER_PORT  = 1883;
-static constexpr const char* WIFI_SSID         = "Sarmiento Fam WiFi";
-static constexpr const char* WIFI_PASS         = "sarmientofam071081";
+
+// --- WiFi credentials from secrets.h (C2: credential leak fix) ---
+#include "secrets.h"
 
 // --- WebSocket harness ---
 static constexpr const char* WS_HARNESS_HOST = "10.22.25.106";

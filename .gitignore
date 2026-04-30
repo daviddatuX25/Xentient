@@ -15,6 +15,9 @@ harness/dist/
 # Environment
 .env
 
+# Firmware secrets (C2: credential leak fix)
+firmware/shared/secrets.h
+
 # IDE
 .vscode/
 .idea/

@@ -13,17 +13,25 @@
 static WiFiClient espClient;
 static PubSubClient client(espClient);
 
-// --- Reconnect state ---
+// --- Reconnect state (H3: guarded by reconnectMux) ---
+static portMUX_TYPE reconnectMux = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t  retryCount = 0;
 static unsigned long lastReconnectAttempt = 0;
 
 // --- Internal: attempt connection to broker ---
 static void mqtt_connect() {
+    uint8_t attempt;
+    portENTER_CRITICAL(&reconnectMux);
+    attempt = retryCount + 1;
+    portEXIT_CRITICAL(&reconnectMux);
+
     Serial.printf("[MQTT] Connecting to %s:%d (attempt %d)...\n",
-                  MQTT_BROKER_ADDR, MQTT_BROKER_PORT, retryCount + 1);
+                  MQTT_BROKER_ADDR, MQTT_BROKER_PORT, attempt);
 
     if (client.connect(MQTT_CLIENT_ID)) {
+        portENTER_CRITICAL(&reconnectMux);
         retryCount = 0;
+        portEXIT_CRITICAL(&reconnectMux);
         Serial.println("[MQTT] Connected.");
         lcd_set_state(NodeState::LISTENING);
 
@@ -124,28 +132,36 @@ static void handle_profile_set(byte* payload, unsigned int length) {
     strncpy(incoming.profile_id, profile_id, sizeof(incoming.profile_id) - 1);
 
     // Optional fields with defaults from snapshot if missing
+    // C3: Range validation — reject out-of-range values, fall back to snapshot
     incoming.pir_interval_ms = doc["pir_interval_ms"] | snap.pir_interval_ms;
-    incoming.mic_mode         = doc["mic_mode"].is<int>()
-                                ? (uint8_t)doc["mic_mode"].as<int>()
-                                : snap.mic_mode;
+    {
+        uint8_t mm = doc["mic_mode"].is<int>()
+                    ? (uint8_t)doc["mic_mode"].as<int>()
+                    : snap.mic_mode;
+        incoming.mic_mode = (mm <= 2) ? mm : snap.mic_mode;
+    }
     incoming.bme_interval_ms = doc["bme_interval_ms"] | snap.bme_interval_ms;
-    incoming.camera_mode      = doc["camera_mode"].is<int>()
-                                ? (uint8_t)doc["camera_mode"].as<int>()
-                                : snap.camera_mode;
-    incoming.lcd_face         = doc["lcd_face"].is<int>()
-                                ? (uint8_t)doc["lcd_face"].as<int>()
-                                : snap.lcd_face;
+    {
+        uint8_t cm = doc["camera_mode"].is<int>()
+                    ? (uint8_t)doc["camera_mode"].as<int>()
+                    : snap.camera_mode;
+        incoming.camera_mode = (cm <= 2) ? cm : snap.camera_mode;
+    }
+    {
+        uint8_t lf = doc["lcd_face"].is<int>()
+                    ? (uint8_t)doc["lcd_face"].as<int>()
+                    : snap.lcd_face;
+        incoming.lcd_face = (lf <= 3) ? lf : snap.lcd_face;
+    }
     incoming.event_mask       = doc["event_mask"].is<int>()
                                 ? (uint16_t)doc["event_mask"].as<int>()
                                 : snap.event_mask;
 
-    // Store profileId immediately for ack echo (8.5)
-    strncpy(lastReceivedProfileId, profile_id, sizeof(lastReceivedProfileId) - 1);
-    lastReceivedProfileId[sizeof(lastReceivedProfileId) - 1] = '\0';
-
-    // -- Only the final copy needs the critical section --
+    // C1: profileId stored atomically inside critical section with pendingProfile
     portENTER_CRITICAL(&profileMux);
     memcpy((void*)&pendingProfile, &incoming, sizeof(NodeProfile));
+    strncpy(lastReceivedProfileId, profile_id, sizeof(lastReceivedProfileId) - 1);
+    lastReceivedProfileId[sizeof(lastReceivedProfileId) - 1] = '\0';
     profileUpdateFlag = true;
     portEXIT_CRITICAL(&profileMux);
 
@@ -185,23 +201,34 @@ void mqtt_loop() {
     if (!client.connected()) {
         unsigned long now = millis();
 
-        if (retryCount < MQTT_RETRY_MAX) {
+        portENTER_CRITICAL(&reconnectMux);
+        uint8_t rc = retryCount;
+        unsigned long lra = lastReconnectAttempt;
+        portEXIT_CRITICAL(&reconnectMux);
+
+        if (rc < MQTT_RETRY_MAX) {
             // Exponential backoff: MQTT_RETRY_BASE_MS * 2^retryCount
-            uint32_t delay = MQTT_RETRY_BASE_MS * (1u << retryCount);
-            if (now - lastReconnectAttempt >= delay) {
+            uint32_t delay = MQTT_RETRY_BASE_MS * (1u << rc);
+            if (now - lra >= delay) {
+                portENTER_CRITICAL(&reconnectMux);
                 lastReconnectAttempt = now;
+                portEXIT_CRITICAL(&reconnectMux);
                 mqtt_connect();
                 // Only increment if connection failed (retryCount is reset in mqtt_connect on success)
                 if (!client.connected()) {
+                    portENTER_CRITICAL(&reconnectMux);
                     retryCount++;
+                    portEXIT_CRITICAL(&reconnectMux);
                 }
             }
         } else {
-            // All 3 retries exhausted — wait MQTT_RETRY_RESET_MS then reset counter
-            if (now - lastReconnectAttempt >= MQTT_RETRY_CAP_MS) {
+            // All 3 retries exhausted — wait MQTT_RETRY_CAP_MS then reset counter
+            if (now - lra >= MQTT_RETRY_CAP_MS) {
                 Serial.println("[MQTT] Resetting retry counter after backoff...");
+                portENTER_CRITICAL(&reconnectMux);
                 retryCount = 0;
                 lastReconnectAttempt = now;
+                portEXIT_CRITICAL(&reconnectMux);
             }
         }
     }
@@ -225,8 +252,10 @@ void mqtt_subscribe(const char* topic) {
 }
 
 void mqtt_reconnect() {
+    portENTER_CRITICAL(&reconnectMux);
     retryCount = 0;
     lastReconnectAttempt = 0;
+    portEXIT_CRITICAL(&reconnectMux);
     if (!client.connected()) {
         mqtt_connect();
     }

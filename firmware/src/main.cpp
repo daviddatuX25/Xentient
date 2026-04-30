@@ -163,10 +163,17 @@ static void work_task(void* /*pvParameters*/) {
 
         uint32_t now = millis();
 
-        // -- PIR: poll or ISR-driven depending on event_mask --
-        if ((snap.event_mask & (EVENT_MASK_PRESENCE | EVENT_MASK_MOTION)) &&
-            pirTriggered && mqtt_connected()) {
+        // -- PIR: atomic read-and-clear (H1: prevents ISR edge loss) --
+        bool pirFired = false;
+        portENTER_CRITICAL(&profileMux);
+        if (pirTriggered) {
+            pirFired = true;
             pirTriggered = false;
+        }
+        portEXIT_CRITICAL(&profileMux);
+
+        if ((snap.event_mask & (EVENT_MASK_PRESENCE | EVENT_MASK_MOTION)) &&
+            pirFired && mqtt_connected()) {
             JsonDocument doc;
             doc["v"]              = MSG_VERSION;
             doc["type"]           = "sensor_data";
@@ -296,8 +303,7 @@ static void config_task(void* /*pvParameters*/) {
 void wifi_event_cb(WiFiEvent_t event) {
     switch (event) {
         case SYSTEM_EVENT_STA_GOT_IP:
-        case SYSTEM_EVENT_STA_CONNECTED:
-            Serial.println("[WIFI] Connected/reconnected — triggering MQTT reconnect");
+            Serial.println("[WIFI] Got IP — triggering MQTT reconnect");
             mqtt_reconnect();
             break;
         default:
@@ -354,11 +360,11 @@ void setup() {
     esp_task_wdt_init(5, true);
     Serial.println("[BOOT] Task watchdog initialized: 5s timeout, panic on timeout");
 
-    // -- Create Config Task (Core 0, low priority, 3KB stack) --
+    // -- Create Config Task (Core 0, low priority, 4KB stack) --
     xTaskCreatePinnedToCore(
         config_task,
         "configTask",
-        3072,
+        4096,
         nullptr,
         1,          // low priority
         &configTaskHandle,
