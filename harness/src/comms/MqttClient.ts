@@ -37,6 +37,7 @@ export class MqttClient extends EventEmitter {
         'xentient/session/error',
         'xentient/display',
         'xentient/node/+/profile/ack',
+        'xentient/node/+/birth',
       ];
       this.client.subscribe(topics, { qos: 1 }, (err) => {
         if (err) logger.error({ err }, 'Failed to subscribe');
@@ -93,8 +94,14 @@ export class MqttClient extends EventEmitter {
         this.emit('modeCommand', data);
       } else if (topic === 'xentient/control/trigger') {
         this.emit('triggerPipeline', data);
-      } else if (topic.startsWith('xentient/node/') && topic.endsWith('/profile/ack')) {
-        this.emit('nodeProfileAck', data);
+      } else if (topic.startsWith('xentient/node/')) {
+        if (topic.endsWith('/profile/ack')) {
+          this.emit('nodeProfileAck', data);
+        } else if (topic.endsWith('/birth')) {
+          this.emit('nodeBirth', data);
+        } else {
+          logger.warn({ topic }, 'Unhandled topic');
+        }
       } else {
         logger.warn({ topic }, 'Unhandled topic');
       }

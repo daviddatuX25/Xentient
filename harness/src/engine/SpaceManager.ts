@@ -374,6 +374,21 @@ export class SpaceManager extends EventEmitter {
     }
   }
 
+  /** Handle firmware birth message — node is online and ready */
+  onNodeBirth(nodeId: string): void {
+    for (const [, space] of this.spaces) {
+      const node = space.nodes.find(n => n.nodeId === nodeId);
+      if (node) {
+        if (node.state === 'dormant') {
+          node.state = 'running';
+          logger.info({ nodeId }, 'Node birth received — transitioning to running');
+          this.pushDefaultProfile(node);
+        }
+        break;
+      }
+    }
+  }
+
   /** Called when MQTT reconnects — replay active configurations */
   onMqttReconnect(): void {
     logger.info('MQTT reconnected — replaying active configurations');

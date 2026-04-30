@@ -21,6 +21,7 @@ static uint16_t   mqttBrokerPort     = MQTT_BROKER_PORT;
 static char runtimeNodeId[24] = NODE_BASE_ID;
 static char resolvedTopicProfileSet[64] = {0};
 static char resolvedTopicProfileAck[64] = {0};
+static char resolvedTopicBirth[64] = {0};
 
 // --- Reconnect state (H3: guarded by reconnectMux) ---
 static portMUX_TYPE reconnectMux = portMUX_INITIALIZER_UNLOCKED;
@@ -48,6 +49,17 @@ static void mqtt_connect() {
         mqtt_subscribe(TOPIC_MODE_SET);
         mqtt_subscribe(TOPIC_DISPLAY);
         mqtt_subscribe(resolvedTopicProfileSet);
+
+        // Publish birth message so harness knows this node is online
+        JsonDocument birthDoc;
+        birthDoc["v"]        = MSG_VERSION;
+        birthDoc["type"]     = "node_birth";
+        birthDoc["nodeId"]   = runtimeNodeId;
+        birthDoc["timestamp"] = (uint32_t)millis();
+        char birthBuf[128];
+        serializeJson(birthDoc, birthBuf, sizeof(birthBuf));
+        mqtt_publish(resolvedTopicBirth, birthBuf, strlen(birthBuf));
+        Serial.printf("[MQTT] Birth message published for node '%s'\n", runtimeNodeId);
     } else {
         Serial.printf("[MQTT] Connect failed, rc=%d\n", client.state());
         lcd_set_state(NodeState::ERROR_STATE);
@@ -211,6 +223,7 @@ void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId) 
     // Resolve nodeId-dependent topics at runtime
     buildNodeTopic(runtimeNodeId, TOPIC_NODE_PROFILE_SET_SUFFIX, resolvedTopicProfileSet, sizeof(resolvedTopicProfileSet));
     buildNodeTopic(runtimeNodeId, TOPIC_NODE_PROFILE_ACK_SUFFIX, resolvedTopicProfileAck, sizeof(resolvedTopicProfileAck));
+    buildNodeTopic(runtimeNodeId, TOPIC_NODE_BIRTH_SUFFIX, resolvedTopicBirth, sizeof(resolvedTopicBirth));
     client.setServer(mqttBrokerHost, mqttBrokerPort);
     client.setCallback(mqtt_callback);
     mqtt_connect();

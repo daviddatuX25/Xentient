@@ -97,6 +97,9 @@ async function main() {
   mqtt.on('nodeProfileAck', (data: { nodeId: string; status: 'loaded' | 'error' }) => {
     spaceManager.onNodeProfileAck(data.nodeId, data.status);
   });
+  mqtt.on('nodeBirth', (data: { nodeId: string }) => {
+    spaceManager.onNodeBirth(data.nodeId);
+  });
 
   // --- EventSubscriptionManager: Sprint 4 event subscription system ---
   const eventSubManager = new EventSubscriptionManager((subscriptionId: string, events: unknown[]) => {

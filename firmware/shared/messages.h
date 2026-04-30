@@ -115,6 +115,10 @@ static constexpr const char* TOPIC_NODE_PROFILE_SET_BASE = "xentient/node/";
 static constexpr const char* TOPIC_NODE_PROFILE_SET_SUFFIX = "/profile/set";
 static constexpr const char* TOPIC_NODE_PROFILE_ACK_SUFFIX = "/profile/ack";
 
+// --- Node birth message (published on first MQTT connect) ---
+static constexpr const char* TOPIC_NODE_BIRTH_SUFFIX = "/birth";
+// Message: { v:1, type:"node_birth", nodeId:"node-01", timestamp:ms }
+
 // Build a resolved topic string: "xentient/node/<nodeId>/profile/set" or "/ack"
 // buf must be at least 64 bytes. Returns pointer to buf.
 char* buildNodeTopic(const char* nodeId, const char* suffix, char* buf, size_t bufLen);
