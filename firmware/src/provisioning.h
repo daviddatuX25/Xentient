@@ -2,8 +2,6 @@
 #include <cstdint>
 
 struct ProvisioningConfig {
-    char wifiSsid[33];
-    char wifiPass[64];
     char mqttHost[46];
     uint16_t mqttPort;
     char nodeId[24];
@@ -30,3 +28,7 @@ void provisioning_clear();
 // Call this early in setup() before any WiFi/NVS reads.
 // Returns true if factory reset was triggered (caller should ESP.restart()).
 bool provisioning_check_factory_reset();
+
+// One-time migration: remove legacy NVS keys from pre-S3 firmware.
+// Call once in setup() before any provisioning reads.
+void provisioning_migrate_legacy();
