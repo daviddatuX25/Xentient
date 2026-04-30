@@ -17,6 +17,7 @@
 #include "ws_audio.h"
 #include "cam_relay.h"
 #include "messages.h"
+#include "provisioning.h"
 
 // ============================================================================
 //  Shared state — two-task model
@@ -34,22 +35,6 @@ char               lastReceivedProfileId[32] = {0};
 static bool i2c_ping(uint8_t addr) {
     Wire.beginTransmission(addr);
     return (Wire.endTransmission() == 0);
-}
-
-static void wifi_connect() {
-    Serial.printf("[WIFI] Connecting to %s...\n", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    uint8_t attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print('.');
-        attempts++;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WIFI] Connected. IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("\n[WIFI] Failed to connect — continuing without network");
-    }
 }
 
 // ============================================================================
@@ -340,13 +325,40 @@ void setup() {
     memcpy((void*)&activeProfile, &DEFAULT_PROFILE, sizeof(NodeProfile));
     Serial.printf("[BOOT] activeProfile = '%s'\n", activeProfile.profile_id);
 
-    wifi_connect();
+    // -- Factory reset: hold BOOT button (GPIO0) for 3s on power-up --
+    if (provisioning_check_factory_reset()) {
+        ESP.restart();
+    }
+
+    // -- Provisioning: NVS → portal fallback, WiFiManager owns WiFi lifecycle --
+    ProvisioningConfig cfg;
+    if (provisioning_has_config()) {
+        cfg = provisioning_read_config();
+        Serial.printf("[BOOT] NVS config: node=%s space=%s mqtt=%s:%u\n",
+                     cfg.nodeId, cfg.spaceId, cfg.mqttHost, cfg.mqttPort);
+        if (!provisioning_start_portal()) {
+            Serial.println("[BOOT] WiFiManager failed to connect — restarting");
+            ESP.restart();
+        }
+    } else {
+        Serial.println("[BOOT] No NVS config — starting provisioning portal");
+        lcd_set_state(NodeState::BOOT);
+        lcd_display_face("(+_-)", "setup mode...");
+        if (!provisioning_start_portal()) {
+            Serial.println("[BOOT] Portal timeout — restarting into setup mode");
+            ESP.restart();
+        }
+        cfg = provisioning_read_config();
+    }
+
+    // WiFi is now connected (WiFiManager guaranteed this or we restarted)
+    Serial.printf("[WIFI] Connected. IP: %s\n", WiFi.localIP().toString().c_str());
 
     // Register WiFi event handler for MQTT reconnect on WiFi reconnect (8.6)
     WiFi.onEvent(wifi_event_cb);
 
-    mqtt_init();
-    ws_audio_init(WS_HARNESS_HOST, WS_HARNESS_PORT);
+    mqtt_init(cfg.mqttHost, cfg.mqttPort, cfg.nodeId);
+    ws_audio_init(cfg.wsHost, cfg.wsPort);
     i2s_mic_init();
     vad_init();
     cam_relay_init();

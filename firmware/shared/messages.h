@@ -106,9 +106,18 @@ static const NodeProfile DEFAULT_PROFILE = {
     EVENT_MASK_PRESENCE,
 };
 
-// --- MQTT topics for NodeProfile hot-swap (mirrors contracts.ts MQTT_TOPICS) ---
-static constexpr const char* TOPIC_NODE_PROFILE_SET = "xentient/node/{nodeId}/profile/set";
-static constexpr const char* TOPIC_NODE_PROFILE_ACK = "xentient/node/{nodeId}/profile/ack";
+// --- MQTT topics for NodeProfile hot-swap ---
+// NOTE: {nodeId} MUST be resolved at runtime. These are template strings,
+// NOT subscribe/publish targets. Use buildNodeTopic() to get the resolved topic.
+static constexpr const char* TOPIC_NODE_PROFILE_SET_TPL = "xentient/node/{nodeId}/profile/set";
+static constexpr const char* TOPIC_NODE_PROFILE_ACK_TPL = "xentient/node/{nodeId}/profile/ack";
+static constexpr const char* TOPIC_NODE_PROFILE_SET_BASE = "xentient/node/";
+static constexpr const char* TOPIC_NODE_PROFILE_SET_SUFFIX = "/profile/set";
+static constexpr const char* TOPIC_NODE_PROFILE_ACK_SUFFIX = "/profile/ack";
+
+// Build a resolved topic string: "xentient/node/<nodeId>/profile/set" or "/ack"
+// buf must be at least 64 bytes. Returns pointer to buf.
+char* buildNodeTopic(const char* nodeId, const char* suffix, char* buf, size_t bufLen);
 
 // --- Two-task model shared state (critical-section protected) ---
 // Task 1 (Work Task, Core 1, high priority): runs activeProfile
@@ -139,16 +148,34 @@ static constexpr uint32_t TELEMETRY_INTERVAL_MS = 5000; // BME280 publish every 
 
 // --- Node identity ---
 static constexpr const char* MQTT_CLIENT_ID = "xentient-node-01";
-static constexpr const char* NODE_BASE_ID   = "node-01";
-static constexpr const char* SPACE_ID       = "living-room";
 
-// --- Broker (override before flashing) ---
-static constexpr const char* MQTT_BROKER_ADDR = "10.22.25.106";
-static constexpr uint16_t    MQTT_BROKER_PORT  = 1883;
+// --- Compile-time defaults (overridden by NVS at runtime) ---
+// These serve as fallbacks when NVS is empty (first boot before provisioning).
+// Override via build_flags in platformio.ini per environment.
+#ifndef MQTT_BROKER_ADDR
+  #define MQTT_BROKER_ADDR "10.22.25.106"
+#endif
+#ifndef MQTT_BROKER_PORT
+  #define MQTT_BROKER_PORT 1883
+#endif
+#ifndef NODE_BASE_ID
+  #define NODE_BASE_ID "node-01"
+#endif
+#ifndef SPACE_ID
+  #define SPACE_ID "living-room"
+#endif
+#ifndef WS_HARNESS_HOST
+  #define WS_HARNESS_HOST "10.22.25.106"
+#endif
+#ifndef WS_HARNESS_PORT
+  #define WS_HARNESS_PORT 8080
+#endif
 
-// --- WiFi credentials from secrets.h (C2: credential leak fix) ---
-#include "secrets.h"
-
-// --- WebSocket harness ---
-static constexpr const char* WS_HARNESS_HOST = "10.22.25.106";
-static constexpr uint16_t    WS_HARNESS_PORT  = 8080;
+// WiFi credentials — only used as compile-time fallback.
+// At runtime, WiFiManager handles WiFi connection from NVS.
+#ifndef WIFI_SSID
+  #define WIFI_SSID "YOUR_WIFI_SSID"
+#endif
+#ifndef WIFI_PASS
+  #define WIFI_PASS "YOUR_WIFI_PASSWORD"
+#endif

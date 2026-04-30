@@ -1,24 +1,20 @@
 import { randomUUID } from 'crypto';
-import type { ProvisioningToken, SpaceNode } from '../shared/types';
+import { EventEmitter } from 'events';
+import pino from 'pino';
+import type { ProvisioningToken, ProvisioningManager, SpaceNode } from '../shared/types';
 
-/**
- * Contract that SpaceManager must satisfy for the provisioning flow.
- * Task 4 will add these methods to SpaceManager directly.
- */
-export interface ProvisioningManager {
-  registerNode(spaceId: string, node: SpaceNode): void;
-  updateNodeStatus(spaceId: string, nodeId: string, status: 'pending' | 'active'): boolean;
-  removeNode(spaceId: string, nodeId: string): boolean;
-}
+const log = pino({ name: 'node-provisioner' });
 
-export class NodeProvisioner {
+export class NodeProvisioner extends EventEmitter {
   private pendingTokens = new Map<string, { token: ProvisioningToken; role: string; hardware: string[]; createdAt: number }>();
 
   constructor(
     private getMqttBroker: () => { host: string; port: number },
     private getWsHost: () => { host: string; port: number },
     private spaceManager: ProvisioningManager,
-  ) {}
+  ) {
+    super();
+  }
 
   /**
    * Generate a provisioning token AND register the node in SpaceManager immediately.
@@ -26,14 +22,23 @@ export class NodeProvisioner {
    * The node starts in status "pending" and transitions to "active" on first MQTT connect.
    */
   generateToken(spaceId: string, role: string, hardware: string[], wifiSsid?: string): ProvisioningToken {
-    const nodeId = `node_${randomUUID().slice(0, 8)}`;
+    const mqtt = this.getMqttBroker();
+    const ws = this.getWsHost();
+    if (!mqtt?.host || !mqtt?.port) {
+      throw new Error('MQTT broker not configured — cannot generate provisioning token');
+    }
+    if (!ws?.host || !ws?.port) {
+      throw new Error('WebSocket host not configured — cannot generate provisioning token');
+    }
+
+    const nodeId = `node_${randomUUID().slice(0, 12)}`;
     const token: ProvisioningToken = {
       nodeId,
       spaceId,
-      mqttBroker: this.getMqttBroker().host,
-      mqttPort: this.getMqttBroker().port,
-      wsHost: this.getWsHost().host,
-      wsPort: this.getWsHost().port,
+      mqttBroker: mqtt.host,
+      mqttPort: mqtt.port,
+      wsHost: ws.host,
+      wsPort: ws.port,
       wifiSsid,
     };
 
@@ -50,6 +55,9 @@ export class NodeProvisioner {
     // Track pending token for cleanup
     this.pendingTokens.set(nodeId, { token, role, hardware, createdAt: Date.now() });
 
+    log.info({ nodeId, spaceId, role }, 'Provisioning token generated');
+    this.emit('node-provisioned', { nodeId, spaceId, role });
+
     return token;
   }
 
@@ -59,10 +67,16 @@ export class NodeProvisioner {
    */
   confirmNode(nodeId: string): boolean {
     const pending = this.pendingTokens.get(nodeId);
-    if (!pending) return false;
+    if (!pending) {
+      log.warn({ nodeId }, 'Node not found in pending tokens');
+      return false;
+    }
     this.pendingTokens.delete(nodeId);
+    const spaceId = pending.token.spaceId;
+    log.info({ nodeId }, 'Node confirmed active');
+    this.emit('node-confirmed', { nodeId, spaceId });
     // Update node status in SpaceManager
-    return this.spaceManager.updateNodeStatus(pending.token.spaceId, nodeId, 'active');
+    return this.spaceManager.updateNodeStatus(spaceId, nodeId, 'active');
   }
 
   /**
@@ -74,11 +88,14 @@ export class NodeProvisioner {
     let cleaned = 0;
     for (const [nodeId, entry] of this.pendingTokens.entries()) {
       if (now - entry.createdAt > ttlMs) {
-        this.spaceManager.removeNode(entry.token.spaceId, nodeId);
+        const spaceId = entry.token.spaceId;
+        this.spaceManager.removeNode(spaceId, nodeId);
         this.pendingTokens.delete(nodeId);
+        this.emit('node-expired', { nodeId, spaceId });
         cleaned++;
       }
     }
+    log.info({ cleaned, ttlMs }, 'Stale tokens cleaned up');
     return cleaned;
   }
 }

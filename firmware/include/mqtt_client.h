@@ -6,7 +6,8 @@
 typedef void (*MqttCallback)(const char* topic, const uint8_t* payload, unsigned int length);
 
 // Create WiFiClient + PubSubClient, set server, register callbacks, call connect.
-void mqtt_init();
+// brokerHost/brokerPort come from provisioning config (NVS), not compile-time constants.
+void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId = nullptr);
 
 // MUST be called every loop() iteration — handles PubSubClient.loop() + reconnect logic.
 void mqtt_loop();

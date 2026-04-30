@@ -61,7 +61,16 @@ export interface ProvisioningToken {
   wsHost: string;
   wsPort: number;
   wifiSsid?: string;   // optional: pre-fill WiFi if known
-  wifiPass?: string;   // optional: pre-fill WiFi if known
+}
+
+/**
+ * Contract that SpaceManager must satisfy for the provisioning flow.
+ * Task 4 will add these methods to SpaceManager directly.
+ */
+export interface ProvisioningManager {
+  registerNode(spaceId: string, node: SpaceNode): void;
+  updateNodeStatus(spaceId: string, nodeId: string, status: 'pending' | 'active'): boolean;
+  removeNode(spaceId: string, nodeId: string): boolean;
 }
 
 // ---- NodeSkill ----

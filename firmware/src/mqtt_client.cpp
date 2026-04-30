@@ -13,6 +13,15 @@
 static WiFiClient espClient;
 static PubSubClient client(espClient);
 
+// --- Broker address set at init from provisioning config ---
+static char       mqttBrokerHost[46] = MQTT_BROKER_ADDR;
+static uint16_t   mqttBrokerPort     = MQTT_BROKER_PORT;
+
+// --- Runtime-resolved nodeId for topic building ---
+static char runtimeNodeId[24] = NODE_BASE_ID;
+static char resolvedTopicProfileSet[64] = {0};
+static char resolvedTopicProfileAck[64] = {0};
+
 // --- Reconnect state (H3: guarded by reconnectMux) ---
 static portMUX_TYPE reconnectMux = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t  retryCount = 0;
@@ -25,8 +34,8 @@ static void mqtt_connect() {
     attempt = retryCount + 1;
     portEXIT_CRITICAL(&reconnectMux);
 
-    Serial.printf("[MQTT] Connecting to %s:%d (attempt %d)...\n",
-                  MQTT_BROKER_ADDR, MQTT_BROKER_PORT, attempt);
+    Serial.printf("[MQTT] Connecting to %s:%u (attempt %d)...\n",
+                  mqttBrokerHost, (unsigned)mqttBrokerPort, attempt);
 
     if (client.connect(MQTT_CLIENT_ID)) {
         portENTER_CRITICAL(&reconnectMux);
@@ -38,7 +47,7 @@ static void mqtt_connect() {
         // Subscribe to control and display topics
         mqtt_subscribe(TOPIC_MODE_SET);
         mqtt_subscribe(TOPIC_DISPLAY);
-        mqtt_subscribe(TOPIC_NODE_PROFILE_SET);
+        mqtt_subscribe(resolvedTopicProfileSet);
     } else {
         Serial.printf("[MQTT] Connect failed, rc=%d\n", client.state());
         lcd_set_state(NodeState::ERROR_STATE);
@@ -178,7 +187,7 @@ static void mqtt_callback(char* topic, byte* payload, unsigned int length) {
         handle_mode_set(payload, length);
         return;
     }
-    if (strcmp(topic, TOPIC_NODE_PROFILE_SET) == 0) {
+    if (strcmp(topic, resolvedTopicProfileSet) == 0) {
         handle_profile_set(payload, length);
         return;
     }
@@ -189,8 +198,18 @@ static void mqtt_callback(char* topic, byte* payload, unsigned int length) {
 
 // --- Public API ---
 
-void mqtt_init() {
-    client.setServer(MQTT_BROKER_ADDR, MQTT_BROKER_PORT);
+void mqtt_init(const char* brokerHost, uint16_t brokerPort, const char* nodeId) {
+    strncpy(mqttBrokerHost, brokerHost, sizeof(mqttBrokerHost) - 1);
+    mqttBrokerHost[sizeof(mqttBrokerHost) - 1] = '\0';
+    mqttBrokerPort = brokerPort;
+    if (nodeId) {
+        strncpy(runtimeNodeId, nodeId, sizeof(runtimeNodeId) - 1);
+        runtimeNodeId[sizeof(runtimeNodeId) - 1] = '\0';
+    }
+    // Resolve nodeId-dependent topics at runtime
+    buildNodeTopic(runtimeNodeId, TOPIC_NODE_PROFILE_SET_SUFFIX, resolvedTopicProfileSet, sizeof(resolvedTopicProfileSet));
+    buildNodeTopic(runtimeNodeId, TOPIC_NODE_PROFILE_ACK_SUFFIX, resolvedTopicProfileAck, sizeof(resolvedTopicProfileAck));
+    client.setServer(mqttBrokerHost, mqttBrokerPort);
     client.setCallback(mqtt_callback);
     mqtt_connect();
 }
@@ -279,6 +298,6 @@ void send_profile_ack(const char* status) {
     doc["timestamp"] = (uint32_t)millis();
     char buf[256];
     serializeJson(doc, buf, sizeof(buf));
-    mqtt_publish(TOPIC_NODE_PROFILE_ACK, buf, strlen(buf));
+    mqtt_publish(resolvedTopicProfileAck, buf, strlen(buf));
     Serial.printf("[MQTT] Sent profile_ack: id='%s' status='%s'\n", ackProfileId, status);
 }
