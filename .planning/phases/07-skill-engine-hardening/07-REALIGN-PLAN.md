@@ -1,8 +1,8 @@
 # Xentient Realignment Plan — Configuration-Centric Architecture
 
 **Date:** 2026-04-30
-**Status:** Ready for execution
-**Source:** User's definitive architecture + gap analysis + four clarifications
+**Status:** Ready for execution (v2 — incorporates three corrections from architecture review)
+**Source:** User's definitive architecture + gap analysis + four clarifications + three corrections
 
 ---
 
@@ -10,9 +10,9 @@
 
 Core's operating concept changes from **"which mode is active"** to **"which configuration is active."**
 
-A configuration bundles everything: a NodeProfile for the firmware, a set of CoreSkills, a set of BrainSkills, and transition rules. When a configuration activates, Core pushes the NodeProfile to the node, enables the right skills, disables the rest, and tells Brain.
+A configuration bundles everything: NodeSkill assignments per node role, a set of CoreSkills, a set of BrainSkills, and transition rules. When a configuration activates, Core iterates every node in the space, looks up each node's role in the configuration's `nodeAssignments`, compiles the matching NodeSkill to a NodeProfile, and pushes it to that specific node. Each node gets the right behavior for its physical position and purpose.
 
-The four hardware states (sleep/listen/active/record) stay — they're the Node's vocabulary. But Core's behavioral concept is `activeConfig`, not `activeMode`.
+The four hardware states (sleep/listen/active/record) are **removed** from Core's type system. They were behavioral labels from the old mode-centric thinking. The pack now owns all behavioral meaning through configurations and NodeSkills. Core only needs to know: is this node `dormant` or `running`.
 
 ---
 
@@ -20,11 +20,41 @@ The four hardware states (sleep/listen/active/record) stay — they're the Node'
 
 ### D1: NodeSkill vs NodeProfile — Two Layers, One Compilation
 
+**Correction:** NodeSkill `sampling` now includes an explicit `micMode` field (0=off, 1=vad-only, 2=always-on). The original `toNodeProfile()` mapped `vadThreshold ? 1 : 0` which made always-on unreachable from packs. Now pack authors explicitly declare mic mode.
+
 **NodeSkill** is the Core-level abstraction. It lives in the pack manifest. It has human-readable names, hardware requirements, event declarations, and a `compatibleConfigs` field. Brain authors these. Pack authors write these. Humans read these.
 
 **NodeProfile** is the firmware-level contract. It's what Core compiles a NodeSkill down to before pushing to the ESP32. A simple C struct — no names, no requirements checking, just numbers and enums. The firmware never sees a NodeSkill, only a NodeProfile.
 
 **`toNodeProfile()`** is the bridge function. Core validates the NodeSkill (hardware present? config compatible?), then compiles it to a NodeProfile struct and pushes that over MQTT. If validation fails, Core refuses the push and falls back to the default NodeProfile for the target configuration.
+
+### D5: Space is a room, not a node — SpaceNode replaces nodeBaseId
+
+A Space maps to a physical environment (the classroom), not a single Node Base. Multiple Node Bases can belong to one Space, each with a declared role. `Space.nodeBaseId: string` becomes `Space.nodes: SpaceNode[]`.
+
+```typescript
+interface SpaceNode {
+  nodeId: string         // hardware identifier
+  role: string           // e.g. "ceiling-unit", "teacher-desk", "door-entrance"
+  hardware: string[]     // what's physically on this node
+}
+```
+
+### D6: Configuration declares NodeSkill per role, not one NodeSkill
+
+`Configuration.nodeSkill: string` becomes `Configuration.nodeAssignments: Record<string, string>` — a map of node role to NodeSkill ID. When `activateConfig()` fires, Core iterates `space.nodes`, looks up each node's role in `nodeAssignments`, compiles the matching NodeSkill to a NodeProfile, and pushes it to that specific node via MQTT.
+
+### D7: SpaceMode four-state enum is removed from Core
+
+Remove `SpaceMode` (sleep/listen/active/record) from Core's type system entirely. Replace with:
+
+```typescript
+type CoreNodeState = 'dormant' | 'running'
+```
+
+Those four states were behavioral labels from the old mode-centric thinking. The pack owns all behavioral meaning through configurations and NodeSkills. Core only needs to know: is this node dormant or is a configuration running on it. The `xentient_set_mode` MCP tool becomes `xentient_set_dormant` — the only manual override Core needs.
+
+Every MQTT event a node emits gets tagged with `nodeId` and `role` so CoreSkills and Brain can filter by role.
 
 This decision unblocks Configuration type design, xentient_get_capabilities, and firmware implementation simultaneously.
 
@@ -125,9 +155,9 @@ Add to ALL_SCHEMAS.
 
 ```typescript
 export interface Configuration {
-  name: string;                    // e.g. "sleep", "meeting", "deep-focus"
+  name: string;                    // e.g. "meeting", "deep-focus"
   displayName: string;            // human-readable
-  nodeSkill: string;               // NodeSkill ID that this configuration activates
+  nodeAssignments: Record<string, string>;  // nodeRole → NodeSkill ID
   coreSkills: string[];            // CoreSkill IDs enabled for this config
   brainSkills?: string[];          // BrainSkill IDs (informational for v1)
   transitions?: ConfigTransitions; // optional auto-transition rules
@@ -144,23 +174,29 @@ export type ConfigTrigger =
   | { sensor: SensorKey; operator: CompareOperator; value: number }
 ```
 
-Update `Space` type:
+#### 1.2b Add SpaceNode + CoreNodeState, remove SpaceMode
 
 ```typescript
+export type CoreNodeState = 'dormant' | 'running';
+
+export interface SpaceNode {
+  nodeId: string;           // hardware identifier
+  role: string;            // e.g. "ceiling-unit", "teacher-desk", "door-entrance"
+  hardware: string[];      // what's physically on this node
+  state: CoreNodeState;    // dormant or running
+}
+
 export interface Space {
   id: string;
-  nodeBaseId: string;
+  nodes: SpaceNode[];              // REPLACES nodeBaseId — multiple nodes per space
   activePack: string;
-  spaceMode: SpaceMode;            // hardware state (unchanged)
   activeConfig: string;            // REPLACES activeMode — which configuration is active
   availableConfigs: string[];      // list of config names available in this space
   integrations: SpaceIntegration[];
-  role?: string;
-  sensors: string[];
 }
 ```
 
-**Migration note:** `activeMode` (BehavioralMode) is replaced by `activeConfig` (string). `modeFilter` on CoreSkill becomes `configFilter` — a config name or `*` for all configs. Both `activeMode` and `modeFilter` are removed in this sprint.
+**Migration note:** `activeMode` (BehavioralMode) replaced by `activeConfig`. `modeFilter` on CoreSkill becomes `configFilter`. `SpaceMode` (sleep/listen/active/record) replaced by `CoreNodeState` (dormant/running) per node. `Space.nodeBaseId` replaced by `Space.nodes[]`. All MQTT events from nodes gain `nodeId` and `role` fields.
 
 #### 1.3 Add toNodeProfile() function
 
@@ -168,26 +204,22 @@ New file: `harness/src/engine/nodeProfileCompiler.ts`
 
 ```typescript
 import { NodeSkill, NodeProfile, EVENT_MASK_BITS } from '../shared/contracts';
-import type { Space } from './types';
+import type { SpaceNode } from './types';
 
 /**
  * Compiles a Core-level NodeSkill into a firmware-level NodeProfile.
- * This is the bridge between the human-readable pack manifest and
- * the binary C struct that the ESP32 understands.
- *
- * Validation:
- * - Checks hardware requirements against the Space's known sensors
- * - Returns null if requirements not met (caller handles fallback)
+ * Validates hardware requirements against the specific node's hardware list.
+ * Returns null if requirements not met (caller handles fallback).
  */
 export function toNodeProfile(
   nodeSkill: NodeSkill,
-  space: Space,
+  node: SpaceNode,
 ): NodeProfile | null {
-  // Hardware check
-  if (nodeSkill.requires.pir && !space.sensors.includes('motion')) return null;
-  if (nodeSkill.requires.mic && !space.sensors.includes('audio')) return null;
-  if (nodeSkill.requires.bme && !space.sensors.includes('temperature')) return null;
-  if (nodeSkill.requires.camera && !space.sensors.includes('camera')) return null;
+  // Hardware check — against this specific node's hardware
+  if (nodeSkill.requires.pir && !node.hardware.includes('motion')) return null;
+  if (nodeSkill.requires.mic && !node.hardware.includes('audio')) return null;
+  if (nodeSkill.requires.bme && !node.hardware.includes('temperature')) return null;
+  if (nodeSkill.requires.camera && !node.hardware.includes('camera')) return null;
 
   // Compile event mask from emits array
   let eventMask = 0;
@@ -199,9 +231,9 @@ export function toNodeProfile(
   return {
     profileId: nodeSkill.id,
     pirIntervalMs: nodeSkill.sampling.pirDebounceMs ?? 1000,
-    micMode: nodeSkill.sampling.vadThreshold ? 1 : 0, // vad-only if threshold set, off otherwise
+    micMode: nodeSkill.sampling.micMode ?? 0,  // explicit: 0=off, 1=vad-only, 2=always-on
     bmeIntervalMs: nodeSkill.sampling.bmeIntervalMs ?? 5000,
-    cameraMode: 0, // v1: always off in profile, camera managed separately
+    cameraMode: nodeSkill.sampling.cameraMode ?? 0,
     lcdFace: 0,    // v1: calm default, LCD managed by set_lcd action
     eventMask,
   };
@@ -218,7 +250,15 @@ export interface NodeSkill {
   name: string;
   version: string;
   requires: { /* unchanged */ };
-  sampling: { /* unchanged */ };
+  sampling: {
+    audioRate?: number;
+    audioChunkMs?: number;
+    bmeIntervalMs?: number;
+    pirDebounceMs?: number;
+    micMode?: number;            // 0=off, 1=vad-only, 2=always-on — explicit
+    cameraMode?: number;         // 0=off, 1=on-motion, 2=stream — explicit
+    vadThreshold?: number;
+  };
   emits: NodeEventType[];
   expectedBy: string;              // paired CoreSkill
   compatibleConfigs: string[];     // which configurations can use this NodeSkill
@@ -273,9 +313,9 @@ Update `PackSkillManifestSchema` in contracts.ts to include these.
 New file: `harness/src/engine/TransitionQueue.ts`
 
 ```typescript
-export type TransitionAction = 
+export type TransitionAction =
   | { type: 'activate_config'; configName: string; spaceId: string }
-  | { type: 'switch_mode'; mode: SpaceMode; spaceId: string }
+  | { type: 'set_node_state'; nodeId: string; state: CoreNodeState }
   | { type: 'register_skill'; skill: CoreSkill; spaceId: string }
   | { type: 'remove_skill'; skillId: string; spaceId: string };
 
@@ -347,19 +387,28 @@ private executeConfigTransition(spaceId: string, configName: string): void {
   // 1. Update space state
   space.activeConfig = configName;
 
-  // 2. Push NodeProfile to Node Base
-  const nodeSkill = pack.nodeSkills.find(ns => ns.id === config.nodeSkill);
-  if (nodeSkill) {
-    const profile = toNodeProfile(nodeSkill, space);
+  // 2. Push NodeProfile to each Node Base in the space
+  for (const node of space.nodes) {
+    const nodeSkillId = config.nodeAssignments[node.role];
+    if (!nodeSkillId) continue; // no assignment for this role — skip
+
+    const nodeSkill = pack.nodeSkills.find(ns => ns.id === nodeSkillId);
+    if (!nodeSkill) {
+      logger.warn({ nodeSkillId, role: node.role }, "NodeSkill not found in pack");
+      continue;
+    }
+
+    const profile = toNodeProfile(nodeSkill, node);
     if (profile) {
       this.mqttClient.publish(
-        `xentient/node/${space.nodeBaseId}/profile/set`,
+        `xentient/node/${node.nodeId}/profile/set`,
         JSON.stringify({ v: 1, type: "node_profile_set", ...profile })
       );
+      node.state = 'running';
     } else {
       // Hardware mismatch — push default profile
-      this.pushDefaultProfile(space);
-      logger.warn({ configName, spaceId }, "NodeSkill hardware mismatch, pushed default profile");
+      this.pushDefaultProfile(node);
+      logger.warn({ configName, nodeId: node.nodeId, role: node.role }, "NodeSkill hardware mismatch, pushed default profile");
     }
   }
 
@@ -479,14 +528,18 @@ Replaces `xentient_switch_mode`. Tool handler:
     const pack = deps.packLoader.getLoadedPackManifest();
 
     return {
-      node: {
-        id: space.nodeBaseId,
-        hardware: space.sensors,  // e.g. ["temperature", "humidity", "motion", "audio"]
-        activeProfile: space.activeConfig,
+      nodes: space.nodes.map(node => ({
+        nodeId: node.nodeId,
+        role: node.role,
+        hardware: node.hardware,
+        state: node.state,
+        activeProfile: pack.nodeSkills
+          ?.find(ns => ns.id === config?.nodeAssignments[node.role])
+          ?.id ?? null,
         eventMask: pack.nodeSkills
-          ?.find(ns => ns.compatibleConfigs.includes(space.activeConfig))
+          ?.find(ns => ns.id === config?.nodeAssignments[node.role])
           ?.emits ?? [],
-      },
+      })),
       core: {
         activePack: space.activePack,
         activeConfig: space.activeConfig,
@@ -978,7 +1031,6 @@ Sprint 9 is always last.
 
 These are locked and untouched by this plan:
 
-- SpaceMode hardware state machine (sleep/listen/active/record)
 - CoreActions enum (exhaustive, type-safe)
 - Escalation ID as correlation key
 - Node Skill pairing invariant
@@ -989,6 +1041,7 @@ These are locked and untouched by this plan:
 - Existing builtin skills logic (just rename modeFilter → configFilter)
 - Camera/audio WebSocket servers
 - ControlServer REST endpoints (only additions)
+- NodeProfile C struct and event mask bits (firmware contract is stable)
 
 ---
 
@@ -1031,7 +1084,7 @@ Each sprint has its own test requirements:
 | `xentient_read_sensors` | existing | Read current sensor values |
 | `xentient_play_audio` | existing | Play audio through speaker |
 | `xentient_set_lcd` | existing | Set LCD display |
-| `xentient_set_mode` | existing | Change SpaceMode (hardware state) |
+| `xentient_set_dormant` | Sprint 2 | Set a node to dormant state (replaces xentient_set_mode) |
 | `xentient_load_pack` | existing | Load a pack |
 | `xentient_list_packs` | existing | List available packs |
 | `xentient_reload_pack` | existing | Reload current pack |
@@ -1040,6 +1093,14 @@ Each sprint has its own test requirements:
 
 ---
 
-*Plan version: 1.0*
+*Plan version: 2.0*
 *Date: 2026-04-30*
-*Based on: User's definitive architecture + gap analysis + four clarifications*
+*Based on: User's definitive architecture + gap analysis + four clarifications + three corrections*
+
+### Three Corrections Applied (v2)
+
+1. **Space is multi-node** — `Space.nodeBaseId` → `Space.nodes: SpaceNode[]`. A Space is a physical room with potentially multiple Node Bases, each with a declared role.
+
+2. **Configuration declares NodeSkill per role** — `Configuration.nodeSkill: string` → `Configuration.nodeAssignments: Record<string, string>`. Each node gets its own NodeProfile when a config activates.
+
+3. **SpaceMode four-state enum removed** — `sleep/listen/active/record` replaced by `CoreNodeState = 'dormant' | 'running'`. The pack owns all behavioral meaning. Core only tracks whether a node is dormant or running a configuration.
