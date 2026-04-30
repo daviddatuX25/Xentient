@@ -18,26 +18,80 @@ export interface SensorCache {
 // Spec: docs/SPEC-xentient-layers.md
 // ============================================================
 
-// ---- Mode (behavioral profile, NOT the same as SpaceMode hardware state) ----
+// ---- Configuration-centric types (replaces BehavioralMode + SpaceMode) ----
 
-/** Behavioral profile — "student" | "family" | "developer" | "default" or custom. */
-export type BehavioralMode = string;
+/** Configuration — a named bundle of NodeSkill assignments, CoreSkills, and transition rules. */
+export interface Configuration {
+  name: string;
+  displayName: string;
+  nodeAssignments: Record<string, string>; // nodeRole -> NodeSkill ID
+  coreSkills: string[];
+  brainSkills?: string[];
+  transitions?: ConfigTransitions;
+}
 
-/**
- * SpaceMode alias — the hardware operational state (sleep/listen/active/record).
- * Deliberately separate from BehavioralMode to prevent mix-ups.
- * Source of truth: contracts.ts `Mode` type.
- */
-export type SpaceMode = import('./contracts').Mode;
+export interface ConfigTransitions {
+  activateWhen?: ConfigTrigger;
+  deactivateWhen?: ConfigTrigger;
+}
+
+export type ConfigTrigger =
+  | { cron: string }
+  | { idle: number }
+  | { sensor: SensorKey; operator: CompareOperator; value: number };
+
+// ---- Node ----
+
+export type CoreNodeState = 'dormant' | 'running';
+
+export interface SpaceNode {
+  nodeId: string;
+  role: string;
+  hardware: string[];
+  state: CoreNodeState;
+}
+
+// ---- NodeSkill ----
+
+export type NodeEventType = 'presence' | 'motion' | 'env' | 'audio_chunk' | 'vad' | 'frame';
+
+export interface NodeSkill {
+  id: string;
+  name: string;
+  version: string;
+  requires: {
+    pir?: boolean;
+    mic?: boolean;
+    bme?: boolean;
+    camera?: boolean;
+    lcd?: boolean;
+  };
+  sampling: {
+    audioRate?: number;
+    audioChunkMs?: number;
+    bmeIntervalMs?: number;
+    pirDebounceMs?: number;
+    micMode?: number;      // 0=off, 1=vad-only, 2=always-on
+    cameraMode?: number;   // 0=off, 1=on-motion, 2=stream
+    vadThreshold?: number;
+  };
+  emits: NodeEventType[];
+  expectedBy: string;        // paired CoreSkill
+  compatibleConfigs: string[];
+  modeTask?: {
+    lcdFace?: number;
+    chime?: ChimePreset;
+  };
+}
 
 // ---- Space ----
 
 export interface Space {
   id: string;
-  nodeBaseId: string;
+  nodes: SpaceNode[];
   activePack: string;
-  spaceMode: SpaceMode;
-  activeMode: BehavioralMode;
+  activeConfig: string;
+  availableConfigs: string[];
   integrations: SpaceIntegration[];
   role?: string;
   sensors: string[];
@@ -71,25 +125,25 @@ export interface CoreSkill {
   lastEscalatedAt?: number;
   escalationCount: number;
 
-  modeFilter?: BehavioralMode;
-  _pack?: string; // Set when source='pack' — the pack name this skill came from
+  configFilter?: string;
+  _pack?: string; // Set when source='pack' -- the pack name this skill came from
 }
 
 // ---- Triggers ----
 
 /**
- * SkillTrigger — defines what activates a skill.
+ * SkillTrigger -- defines what activates a skill.
  *
  * Note on composite triggers (v1): Only sensor sub-triggers work inside
  * { type: 'composite', all: [...] }. Cron, interval, mode, and event
- * sub-triggers are NOT evaluated within composites — they are handled
+ * sub-triggers are NOT evaluated within composites -- they are handled
  * by their own dispatch paths (tick loop, cron scheduler, EventBridge).
  * See SkillExecutor.evaluateTrigger() for the implementation.
  */
 export type SkillTrigger =
   | { type: 'cron'; schedule: string }
   | { type: 'interval'; everyMs: number }
-  | { type: 'mode'; from: SpaceMode | '*'; to: SpaceMode | '*' }
+  | { type: 'mode'; from: string | '*'; to: string | '*' }
   | { type: 'sensor'; sensor: SensorKey; operator: CompareOperator; value: number }
   | { type: 'event'; event: string }
   | { type: 'internal'; event: string }
@@ -103,7 +157,7 @@ export type CompareOperator = '>' | '<' | '==' | '>=' | '<=' | '!=';
 export type CoreAction =
   | { type: 'set_lcd'; line1: string; line2: string }
   | { type: 'play_chime'; preset: ChimePreset }
-  | { type: 'set_mode'; mode: SpaceMode }
+  | { type: 'set_mode'; mode: string }
   | { type: 'mqtt_publish'; topic: string; payload: Record<string, unknown> }
   | { type: 'increment_counter'; name: string }
   | { type: 'log'; message: string }
@@ -113,14 +167,14 @@ export type ChimePreset = 'morning' | 'alert' | 'chime';
 // ---- Data Collection (for escalation context) ----
 
 /**
- * DataCollector — defines how a skill accumulates data for escalation context.
+ * DataCollector -- defines how a skill accumulates data for escalation context.
  *
  * Counter namespace: counters use a flat, shared namespace across all skills
  * in the same executor. If two skills define a counter named "alertCount",
  * they share the same counter. Use unique names (e.g., "mySkill_alertCount")
  * to avoid collisions.
  *
- * Reset timers: resetAfterMs is per-skill — each skill that defines a collector
+ * Reset timers: resetAfterMs is per-skill -- each skill that defines a collector
  * gets its own reset timer (keyed by `${skillId}:${collectorName}`). Removing
  * the skill clears its timers, but does NOT reset the counter value.
  */
@@ -207,7 +261,7 @@ export interface SkillLogEntry {
   resolution?: string;
 }
 
-// ---- Conflict Resolution (Brain → Core response) ----
+// ---- Conflict Resolution (Brain -> Core response) ----
 
 export interface ConflictResolution {
   execute: string[];
@@ -234,6 +288,8 @@ export interface PackSkillManifest {
     description?: string;
     author?: string;
   };
+  configurations: Configuration[];
+  nodeSkills: NodeSkill[];
   skills: PackSkill[];
 }
 
@@ -242,7 +298,7 @@ export interface PackSkill {
   displayName: string;
   trigger: SkillTrigger;
   actions: CoreAction[];
-  modeFilter?: BehavioralMode;
+  configFilter?: string;
   priority?: number;
   cooldownMs?: number;
   escalation?: EscalationConfig;

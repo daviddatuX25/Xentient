@@ -25,11 +25,13 @@ export const PERIPHERAL_IDS = {
 
 export type PeripheralId = (typeof PERIPHERAL_IDS)[keyof typeof PERIPHERAL_IDS];
 
-// ── Mode State Machine ──────────────────────────────────────────────
+// ── Mode State Machine (DEPRECATED — retained for firmware compat) ──
+// These are kept because the ESP32 firmware still uses sleep/listen/active/record.
+// Core now uses Configuration + CoreNodeState instead. See 07-REALIGN-PLAN.md.
 export const MODE_VALUES = ["sleep", "listen", "active", "record"] as const;
 export type Mode = (typeof MODE_VALUES)[number];
 
-// Valid transitions: from → set of allowed to
+/** @deprecated Use Configuration + CoreNodeState instead */
 export const MODE_TRANSITIONS: Record<Mode, Mode[]> = {
   sleep: ["listen"],
   listen: ["active", "sleep", "record"],
@@ -44,6 +46,44 @@ export const LCD_FACES: Record<Mode, { line1: string; line2: string }> = {
   active: { line1: "(^_^)", line2: "Xentient" },
   record: { line1: "(_ _) REC", line2: "" },
 };
+
+// ── NodeProfile (firmware-level contract) ──────────────────────────
+export const NODE_PROFILE_DEFAULTS = {
+  pirIntervalMs: 1000,
+  micMode: 0,        // 0=off, 1=vad-only, 2=always-on
+  bmeIntervalMs: 5000,
+  cameraMode: 0,     // 0=off, 1=on-motion, 2=stream
+  lcdFace: 0,        // enum: 0=calm, 1=alert, 2=listening, 3=speaking
+  eventMask: 0b0001,  // bitmask: default = presence only
+} as const;
+
+export const MIC_MODES = ['off', 'vad-only', 'always-on'] as const;
+export type MicMode = (typeof MIC_MODES)[number];
+
+export const CAMERA_MODES = ['off', 'on-motion', 'stream'] as const;
+export type CameraMode = (typeof CAMERA_MODES)[number];
+
+export const LCD_FACE_ENUM = ['calm', 'alert', 'listening', 'speaking'] as const;
+export type LcdFaceEnum = (typeof LCD_FACE_ENUM)[number];
+
+export const EVENT_MASK_BITS = {
+  PRESENCE:    0b0000_0001,
+  MOTION:      0b0000_0010,
+  ENV:         0b0000_0100,
+  AUDIO_CHUNK: 0b0000_1000,
+  VAD:         0b0001_0000,
+  FRAME:       0b0010_0000,
+} as const;
+
+export interface NodeProfile {
+  profileId: string;
+  pirIntervalMs: number;
+  micMode: number;
+  bmeIntervalMs: number;
+  cameraMode: number;
+  lcdFace: number;
+  eventMask: number;
+}
 
 // ── Base Envelope ────────────────────────────────────────────────────
 export const VersionedMessage = z.object({
@@ -73,15 +113,39 @@ export const ModeStatus = VersionedMessage.extend({
   mode: z.enum(MODE_VALUES),
 });
 
+// ── NodeProfile MQTT Messages ────────────────────────────────────────
+export const NodeProfileSet = VersionedMessage.extend({
+  type: z.literal("node_profile_set"),
+  profileId: z.string().min(1),
+  pirIntervalMs: z.number().int().min(0),
+  micMode: z.number().int().min(0).max(2),
+  bmeIntervalMs: z.number().int().min(0),
+  cameraMode: z.number().int().min(0).max(2),
+  lcdFace: z.number().int().min(0).max(3),
+  eventMask: z.number().int().min(0),
+});
+
+export const NodeProfileAck = VersionedMessage.extend({
+  type: z.literal("node_profile_ack"),
+  profileId: z.string().min(1),
+  status: z.enum(["loaded", "error"]),
+  error: z.string().optional(),
+});
+
 // ── Space Status ────────────────────────────────────────────────────
 export const SpaceStatus = VersionedMessage.extend({
   type: z.literal("space_status"),
   spaces: z.array(
     z.object({
       id: z.string(),
-      nodeBaseId: z.string(),
       activePack: z.string(),
-      mode: z.enum(MODE_VALUES),
+      activeConfig: z.string(),
+      nodes: z.array(z.object({
+        nodeId: z.string(),
+        role: z.string(),
+        hardware: z.array(z.string()),
+        state: z.enum(["dormant", "running"]),
+      })),
       integrations: z.array(z.string()),
       online: z.boolean(),
     }),
@@ -223,6 +287,9 @@ export const MQTT_TOPICS = {
   // Camera (JSON MQTT + binary WS)
   cameraRequest: "xentient/camera/request",
   cameraStatus: "xentient/camera/status",
+  // NodeProfile (JSON MQTT)
+  nodeProfileSet: "xentient/node/{nodeId}/profile/set",
+  nodeProfileAck: "xentient/node/{nodeId}/profile/ack",
 } as const;
 
 // ── Validation helper ───────────────────────────────────────────────
@@ -230,6 +297,8 @@ const ALL_SCHEMAS = {
   display_update: DisplayUpdate,
   mode_set: ModeSet,
   mode_status: ModeStatus,
+  node_profile_set: NodeProfileSet,
+  node_profile_ack: NodeProfileAck,
   space_status: SpaceStatus,
   pack_switch: PackSwitch,
   pack_list_response: PackListResponse,
@@ -268,20 +337,20 @@ export const MCP_EVENTS = {
 export const ALL_CONTRACT_SCHEMAS = ALL_SCHEMAS;
 
 // ============================================================
-// XENTIENT LAYERS — New MCP Events + Mode constants
-// Spec: docs/SPEC-xentient-layers.md §8.2
+// XENTIENT LAYERS — Skill Events + Config-centric MCP Tools
+// Spec: docs/SPEC-xentient-layers.md §8.2 + 07-REALIGN-PLAN.md
 // ============================================================
 
 export const SKILL_EVENTS = {
   SKILL_ESCALATED: 'xentient/skill_escalated',
   SKILL_CONFLICT: 'xentient/skill_conflict',
   SKILL_FIRED: 'xentient/skill_fired',
-  MODE_SWITCHED: 'xentient/mode_switched',
+  CONFIG_CHANGED: 'xentient/config_changed',
 } as const;
 
 export type SkillEventKey = keyof typeof SKILL_EVENTS;
 
-// New MCP Tool names (Brain → Core)
+// MCP Tool names (Brain → Core)
 export const SKILL_TOOLS = {
   REGISTER_SKILL: 'xentient_register_skill',
   UPDATE_SKILL: 'xentient_update_skill',
@@ -289,7 +358,7 @@ export const SKILL_TOOLS = {
   REMOVE_SKILL: 'xentient_remove_skill',
   LIST_SKILLS: 'xentient_list_skills',
   GET_SKILL_LOG: 'xentient_get_skill_log',
-  SWITCH_MODE: 'xentient_switch_mode',
+  ACTIVATE_CONFIG: 'xentient_activate_config',
   RESOLVE_CONFLICT: 'xentient_resolve_conflict',
 } as const;
 
@@ -328,15 +397,52 @@ const PackSkillSchema = z.object({
   displayName: z.string().min(1),
   trigger: z.record(z.unknown()),
   actions: z.array(z.record(z.unknown())),
-  modeFilter: z.string().optional(),
+  configFilter: z.string().optional(),
   priority: z.number().int().min(0).max(100).optional(),
   cooldownMs: z.number().int().min(0).optional(),
   escalation: z.record(z.unknown()).optional(),
   collect: z.array(z.record(z.unknown())).optional(),
 });
 
+// Configuration schema for pack manifest
+const ConfigurationSchema = z.object({
+  name: z.string().min(1),
+  displayName: z.string().min(1),
+  nodeAssignments: z.record(z.string()),
+  coreSkills: z.array(z.string()),
+  brainSkills: z.array(z.string()).optional(),
+});
+
+// NodeSkill schema for pack manifest
+const NodeSkillSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  version: z.string().min(1),
+  requires: z.object({
+    pir: z.boolean().optional(),
+    mic: z.boolean().optional(),
+    bme: z.boolean().optional(),
+    camera: z.boolean().optional(),
+    lcd: z.boolean().optional(),
+  }),
+  sampling: z.object({
+    audioRate: z.number().optional(),
+    audioChunkMs: z.number().optional(),
+    bmeIntervalMs: z.number().optional(),
+    pirDebounceMs: z.number().optional(),
+    micMode: z.number().optional(),
+    cameraMode: z.number().optional(),
+    vadThreshold: z.number().optional(),
+  }),
+  emits: z.array(z.string()),
+  expectedBy: z.string(),
+  compatibleConfigs: z.array(z.string()),
+});
+
 export const PackSkillManifestSchema = z.object({
   pack: PackMetaSchema,
+  configurations: z.array(ConfigurationSchema),
+  nodeSkills: z.array(NodeSkillSchema),
   skills: z.array(PackSkillSchema),
 });
 
@@ -345,7 +451,7 @@ export const PackSkillManifestSchema = z.object({
 const SkillTriggerApiSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cron'), schedule: z.string().min(1) }),
   z.object({ type: z.literal('interval'), everyMs: z.number().int().min(1) }),
-  z.object({ type: z.literal('mode'), from: z.union([z.enum(MODE_VALUES), z.literal('*')]), to: z.union([z.enum(MODE_VALUES), z.literal('*')]) }),
+  z.object({ type: z.literal('mode'), from: z.union([z.string(), z.literal('*')]), to: z.union([z.string(), z.literal('*')]) }),
   z.object({ type: z.literal('sensor'), sensor: z.enum(['temperature', 'humidity', 'pressure', 'motion']), operator: z.enum(['>', '<', '==', '>=', '<=', '!=']), value: z.number() }),
   z.object({ type: z.literal('event'), event: z.string().min(1) }),
   z.object({ type: z.literal('internal'), event: z.string().min(1) }),
@@ -355,7 +461,7 @@ const SkillTriggerApiSchema = z.discriminatedUnion('type', [
 const CoreActionApiSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set_lcd'), line1: z.string(), line2: z.string() }),
   z.object({ type: z.literal('play_chime'), preset: z.enum(['morning', 'alert', 'chime']) }),
-  z.object({ type: z.literal('set_mode'), mode: z.enum(MODE_VALUES) }),
+  z.object({ type: z.literal('set_mode'), mode: z.string() }),
   z.object({ type: z.literal('mqtt_publish'), topic: z.string().min(1), payload: z.record(z.unknown()) }),
   z.object({ type: z.literal('increment_counter'), name: z.string().min(1) }),
   z.object({ type: z.literal('log'), message: z.string() }),
@@ -391,7 +497,7 @@ export const CreateSkillApiSchema = z.object({
   collect: z.array(DataCollectorApiSchema).optional(),
   escalation: EscalationConfigApiSchema.optional(),
   cooldownMs: z.number().int().min(0).optional(),
-  modeFilter: z.string().optional(),
+  configFilter: z.string().optional(),
 });
 
 // ── Pack Management MCP Tool names ──────────────────────────────────
