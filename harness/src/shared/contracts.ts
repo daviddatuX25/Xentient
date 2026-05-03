@@ -40,8 +40,8 @@ export const MODE_TRANSITIONS: Record<Mode, Mode[]> = {
 // ── LCD Face Constants ─────────────────────────────────────────────
 export const LCD_FACES: Record<Mode, { line1: string; line2: string }> = {
   sleep: { line1: "(_ _) Zzz", line2: "" },
-  listen: { line1: "(O_O)", line2: "listening..." },
-  active: { line1: "(^_^)", line2: "" },
+  listen: { line1: "(O_O)", line2: "listening" },
+  active: { line1: "(^_^)", line2: "Xentient" },
   record: { line1: "(_ _) REC", line2: "" },
 };
 
@@ -126,7 +126,7 @@ export const SensorData = VersionedMessage.extend({
   type: z.literal("sensor_data"),
   peripheralType: z.number().int().min(0).max(255),
   payload: z.union([BME280Payload, PIRPayload]),
-  timestamp: z.number().int().min(0), // epoch-millis (JS-safe, ESP32 uses epoch-seconds)
+  timestamp: z.number().int().min(0), // millis-since-boot on ESP32, epoch-millis on harness side
 });
 
 // ── Session Complete ────────────────────────────────────────────────
@@ -254,5 +254,57 @@ export function validateMessage<T extends MessageType>(
   return schema.parse(data) as z.infer<(typeof ALL_SCHEMAS)[T]>;
 }
 
+// ── MCP Event Method Names ──────────────────────────────────────────
+// Used by core.ts to send notifications over MCP stdio transport.
+export const MCP_EVENTS = {
+  motion_detected: "xentient/motion_detected",
+  voice_start: "xentient/voice_start",
+  voice_end: "xentient/voice_end",
+  mode_changed: "xentient/mode_changed",
+  sensor_update: "xentient/sensor_update",
+} as const;
+
 // ── Export all schemas for JSON-Schema generation ────────────────────
 export const ALL_CONTRACT_SCHEMAS = ALL_SCHEMAS;
+
+// ============================================================
+// XENTIENT LAYERS — New MCP Events + Mode constants
+// Spec: docs/SPEC-xentient-layers.md §8.2
+// ============================================================
+
+export const SKILL_EVENTS = {
+  SKILL_ESCALATED: 'xentient/skill_escalated',
+  SKILL_CONFLICT: 'xentient/skill_conflict',
+  SKILL_FIRED: 'xentient/skill_fired',
+  MODE_SWITCHED: 'xentient/mode_switched',
+} as const;
+
+export type SkillEventKey = keyof typeof SKILL_EVENTS;
+
+// New MCP Tool names (Brain → Core)
+export const SKILL_TOOLS = {
+  REGISTER_SKILL: 'xentient_register_skill',
+  UPDATE_SKILL: 'xentient_update_skill',
+  DISABLE_SKILL: 'xentient_disable_skill',
+  REMOVE_SKILL: 'xentient_remove_skill',
+  LIST_SKILLS: 'xentient_list_skills',
+  GET_SKILL_LOG: 'xentient_get_skill_log',
+  SWITCH_MODE: 'xentient_switch_mode',
+  RESOLVE_CONFLICT: 'xentient_resolve_conflict',
+} as const;
+
+// Builtin skill IDs (cannot be removed)
+export const BUILTIN_SKILL_IDS = [
+  '_pir-wake',
+  '_idle-sleep',
+  '_sensor-telemetry',
+  '_determine-skill',
+] as const;
+
+export type BuiltinSkillId = typeof BUILTIN_SKILL_IDS[number];
+
+// Default skill execution log capacity
+export const SKILL_LOG_CAPACITY = 1000;
+
+// Conflict resolution timeout (ms) — fall back to priority if Brain doesn't respond
+export const CONFLICT_TIMEOUT_MS = 10_000;

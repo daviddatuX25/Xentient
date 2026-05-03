@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-27T12:00:00Z",
+  "phase": "06",
+  "phase_name": "xentient-layers",
+  "phase_dir": ".planning/phases/06-xentient-layers",
+  "plan": 2,
+  "task": 2,
+  "total_tasks": 5,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Wave 1: CoreSkill & Mode Type System", "status": "done", "commit": "working"},
+    {"id": 2, "name": "Wave 2: SkillExecutor", "status": "done", "commit": "working"}
+  ],
+  "remaining_tasks": [
+    {"id": 3, "name": "Wave 3: SpaceManager + MCP Skill Tools", "status": "not_started"},
+    {"id": 4, "name": "Wave 4: Wire SpaceManager into Core", "status": "not_started"},
+    {"id": 5, "name": "Wave 5: Tests", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Used node-cron for cron triggers", "rationale": "Spec requirement, already available", "phase": "06"},
+    {"decision": "SkillExecutor extends EventEmitter", "rationale": "LCD/chime actions emit events for core.ts to wire", "phase": "06"},
+    {"decision": "MqttClient.publish() for mqtt_publish action", "rationale": "sendCommand() does not exist on MqttClient", "phase": "06"},
+    {"decision": "mcpServer.notification() for MCP notifications", "rationale": "High-level Promise-returning API, not raw server method", "phase": "06"}
+  ],
+  "uncommitted_files": [
+    "harness/src/shared/types.ts",
+    "harness/src/shared/contracts.ts",
+    "harness/src/engine/SkillLog.ts",
+    "harness/src/engine/contextBuilders.ts",
+    "harness/src/engine/builtins.ts",
+    "harness/src/engine/SkillExecutor.ts",
+    "harness/package.json",
+    "harness/package-lock.json"
+  ],
+  "next_action": "Execute Wave 3: Read 06-03-PLAN.md, create SpaceManager.ts, modify tools.ts and events.ts",
+  "context_notes": "Waves 1-2 complete. TypeScript compiles clean with 8GB heap. tsc OOM on default heap is a known blocker."
+}

@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import pino from 'pino';
 import { AUDIO_WS_PREFIX, CAMERA_WS_PREFIX } from '../shared/contracts';
 
-const logger = pino({ name: 'audio-server' });
+const logger = pino({ name: 'audio-server' }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
 
 const MAX_CAMERA_FRAME_SIZE = 32 * 1024; // 32KB ceiling (QQVGA q10 ~3KB)
 
@@ -121,10 +121,13 @@ export class AudioServer extends EventEmitter {
     this.emit('audioChunk', data);
   }
 
-  /** Send TTS audio back to ESP32 as binary frames */
+  /** Send TTS audio back to ESP32 as binary frames with 0xA0 prefix */
   sendAudio(audioBuffer: Buffer): void {
     if (this.activeConnection?.readyState === WebSocket.OPEN) {
-      this.activeConnection.send(audioBuffer, { binary: true });
+      const prefixed = Buffer.alloc(1 + audioBuffer.length);
+      prefixed[0] = AUDIO_WS_PREFIX;
+      audioBuffer.copy(prefixed, 1);
+      this.activeConnection.send(prefixed, { binary: true });
     } else {
       logger.warn('No active WebSocket connection to send audio to');
     }

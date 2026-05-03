@@ -13,10 +13,20 @@ import { OpenAIProvider } from "./providers/llm/OpenAIProvider";
 import { Pipeline, LatencyReport } from "./engine/Pipeline";
 import { ModeManager } from "./engine/ModeManager";
 import { STTProvider, TTSProvider, LLMProvider } from "./providers/types";
+import type { SensorCache } from "./shared/types";
 import { PROTOCOL_VERSION } from "./shared/contracts";
 import pino from "pino";
 
-const logger = pino({ name: "xentient-core" });
+const logger = pino({ name: "xentient-core" }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
+
+// Sensor cache for status endpoint
+const sensorCache: SensorCache = {
+  temperature: null,
+  humidity: null,
+  pressure: null,
+  motion: null,
+  lastMotionAt: null,
+};
 
 function createSTTProvider(): STTProvider {
   const provider = process.env.STT_PROVIDER ?? config.stt.provider;
@@ -83,7 +93,7 @@ async function main() {
 
   // Control server — HTTP API + static files + SSE for browser test page
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
-  const controlServer = new ControlServer(controlPort, mqtt, pipeline, modeManager);
+  const controlServer = new ControlServer(controlPort, mqtt, modeManager, cameraServer, sensorCache);
   await controlServer.start();
 
   logger.info({ wsPort: config.audio.wsPort, cameraPort: config.camera.wsPort, controlPort, mqtt: config.mqtt.brokerUrl }, "Core ready — open http://localhost:" + controlPort);

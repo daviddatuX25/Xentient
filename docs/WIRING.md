@@ -60,7 +60,7 @@ flowchart LR
 | Listen   | INMP441                     | I2S (in)    | 3.3V    | 6-pin  | L/R pin → GND (mono left)                  |
 | Speak    | MAX98357A + 3W 8Ω speaker   | I2S (out)   | 5V      | 6-pin  | Amp needs 5V for full SPL; logic 3.3V-tol  |
 | Climate  | BME280                      | I2C         | 3.3V    | 6-pin* | 6-pin JST soldered but only 4 used; CSB/SDO NC |
-| Motion   | PIR HC-SR501                | GPIO        | 3.3V    | 3-pin  | Standalone module; OUT = GPIO interrupt    |
+| Motion   | PIR HC-SR501                | GPIO        | 3.3V    | 4-pin  | 3 active (VCC/GND/OUT) + 1 NC; no 3-pin in BOM |
 | Sight    | ESP32-CAM (OV2640)          | UART        | 5V      | 4-pin  | Must be flashed independently first        |
 | LCD      | 16x2 + PCF8574 @0x27        | I2C         | 3.3V    | 4-pin  | **Hardwired to dock**, not a slide-in slot |
 
@@ -169,13 +169,14 @@ Speaker wires: **Red** (+), **Black** (−)
 | 5   | **Yellow** | DATA   | SD         | → GPIO35           |
 | 6   | **Blue**   | L/R    | L/R        | → GND (mono left)  |
 
-### Motion — PIR HC-SR501 (3-pin JST, not yet soldered)
+### Motion — PIR HC-SR501 (4-pin JST, 3 active + 1 NC, not yet soldered)
 
 | Pin | Color    | Signal | Notes                  |
 |-----|----------|--------|------------------------|
 | 1   | *Red*    | VCC    | 3.3V–5V (PIR tolerant)|
 | 2   | *Black*  | GND    |                        |
 | 3   | *White*  | OUT    | → GPIO13               |
+| 4   | *—*      | NC     | Unused (4-pin JST, no 3-pin in BOM) |
 
 ### Sight — ESP32-CAM (4-pin JST, not yet soldered)
 

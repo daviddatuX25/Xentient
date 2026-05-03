@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import pino from 'pino';
 import type { CameraFrameEvent } from './AudioServer';
 
-const logger = pino({ name: 'camera-server' });
+const logger = pino({ name: 'camera-server' }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
 
 const MAX_DASHBOARD_CLIENTS = 10;
 

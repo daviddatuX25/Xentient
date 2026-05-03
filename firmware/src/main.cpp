@@ -37,18 +37,32 @@ static void wifi_connect() {
     }
 }
 
+// --- PIR interrupt (GPIO13) ---
+static volatile bool pirTriggered = false;
+void IRAM_ATTR pir_isr() {
+    pirTriggered = true;
+}
+
+// --- VAD end detection state ---
+static volatile bool vad_was_active = false;
+static volatile bool vad_is_active = false;
+static volatile uint32_t vad_start_millis = 0;
+static bool last_vad_active = false;  // mirrors vad.active from last vad_process() call
+
 // VAD start → trigger_pipeline{source:"voice"} on xentient/control/trigger
-// VAD end has no wire event (harness infers end from audio stream close)
+// VAD end   → trigger_pipeline{source:"voice", stage:"end"} on xentient/control/trigger
 static void publish_vad(bool active) {
     if (!active || !mqtt_connected()) return;
     JsonDocument doc;
     doc["v"]      = MSG_VERSION;
     doc["type"]   = "trigger_pipeline";
     doc["source"] = TRIGGER_SOURCE_VOICE;
-    char buf[96];
+    char buf[128];
     serializeJson(doc, buf, sizeof(buf));
     mqtt_publish(TOPIC_TRIGGER, buf, strlen(buf));
     Serial.println("[VAD] Published: trigger_pipeline source=voice");
+    vad_start_millis = millis();
+    vad_is_active = true;
 }
 
 // --- setup ---
@@ -84,6 +98,11 @@ void setup() {
     vad_init();
     cam_relay_init();
 
+    // --- PIR ISR attachment ---
+    pinMode(PIN_PIR_INT, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PIN_PIR_INT), pir_isr, RISING);
+    Serial.printf("[BOOT] PIR ISR attached on GPIO%d\n", PIN_PIR_INT);
+
     Serial.println("[BOOT] Init complete.");
 }
 
@@ -94,6 +113,22 @@ static int16_t s_pcm[I2S_MIC_CHUNK_SAMPLES];
 static float rounded2(float v) { return round(v * 100.0F) / 100.0F; }
 
 void loop() {
+    // --- PIR motion detection ---
+    if (pirTriggered && mqtt_connected()) {
+        pirTriggered = false;
+        JsonDocument doc;
+        doc["v"]              = MSG_VERSION;
+        doc["type"]           = "sensor_data";
+        doc["peripheralType"] = PERIPHERAL_TYPE_PIR;
+        JsonObject payload    = doc["payload"].to<JsonObject>();
+        payload["motion"]     = true;
+        doc["timestamp"]      = (uint32_t)millis();
+        char buf[128];
+        serializeJson(doc, buf, sizeof(buf));
+        mqtt_publish(TOPIC_MOTION, buf, strlen(buf));
+        Serial.println("[PIR] Motion detected — published sensor_data");
+    }
+
     ws_audio_loop();
     mqtt_loop();
     cam_relay_loop();
@@ -101,6 +136,7 @@ void loop() {
     // --- Mic capture + VAD ---
     if (i2s_mic_read(s_pcm, I2S_MIC_CHUNK_SAMPLES)) {
         VadResult vad = vad_process(s_pcm, I2S_MIC_CHUNK_SAMPLES);
+        last_vad_active = vad.active;
 
         if (vad.transitioned) {
             publish_vad(vad.active);
@@ -109,6 +145,22 @@ void loop() {
         if (vad.active) {
             ws_audio_send((const uint8_t*)s_pcm, I2S_MIC_CHUNK_BYTES);
         }
+    }
+
+    // --- VAD end detection (silence after speech) ---
+    if (vad_is_active && !last_vad_active && mqtt_connected()) {
+        vad_was_active = vad_is_active;
+        vad_is_active = false;
+        JsonDocument doc;
+        doc["v"]           = MSG_VERSION;
+        doc["type"]        = "trigger_pipeline";
+        doc["source"]      = TRIGGER_SOURCE_VOICE;
+        doc["stage"]       = "end";
+        doc["duration_ms"] = (uint32_t)(millis() - vad_start_millis);
+        char buf[128];
+        serializeJson(doc, buf, sizeof(buf));
+        mqtt_publish(TOPIC_TRIGGER, buf, strlen(buf));
+        Serial.printf("[VAD] Voice end — duration %lu ms\n", (unsigned long)(millis() - vad_start_millis));
     }
 
     // --- BME280 telemetry (unchanged cadence) ---

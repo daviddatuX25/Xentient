@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in-progress
-last_updated: "2026-04-20T17:35:00Z"
+status: in_progress
+last_updated: "2026-04-28T10:00:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 9
-  completed_plans: 4
-  percent: 44
+  total_phases: 7
+  completed_phases: 4
+  total_plans: 12
+  completed_plans: 7
+  percent: 58
 ---
 
 # Project State: Xentient
@@ -19,13 +19,17 @@ progress:
 See: [.planning/PROJECT.md](file:///d:/Projects/Xentient/.planning/PROJECT.md) (updated 2026-04-19)
 
 **Core value:** The IoT terminal — a thin voice/hardware bridge that lets any AI brain inhabit a physical room.
-**Current focus:** Phase 5 — doc-architecture-refactor (plans 01-03 complete)
+**Current focus:** Phase 7 (Skill Engine Hardening) planned — 5 plans written. Next: Execute 07-01 Gap Fixes.
 
 ## Active Context
 
-Phase 5 complete: all doc architecture refactor plans executed. ROADMAP.md rewritten with two-track structure (Demo Track + Platform Track P1-P9). PROJECT.md and REQUIREMENTS.md updated for bridge model. NOTES.md trimmed to append-only decision log. xentient.md shrunk to ~90-line L0 pitch. Phase 2 marked SUPERSEDED.
+Phase 1 (firmware), Phase 5 (docs), and Phase 6 (Xentient Layers) all complete. Platform Track P3 (ModeManager) and P4 (SpaceManager) built as part of Phase 6. CoreSkill types, SkillExecutor engine, SpaceManager, 8 MCP skill tools, observability notifications, core.ts wiring, and 34 Vitest tests — all committed and pushed.
 
-Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mode/sensor events, idle timeouts (listen 60s, active 300s), PIR wake (sleep->listen), Pipeline mode-aware audio gating, LCD face display publishing on mode transitions. ModeManager now extends EventEmitter for mode change propagation. Pipeline drops audio in sleep, processes in active, buffers in listen.
+Demo scope reduced: no furnished casing required — filming breadboard prototype as-is. P3-ASSY now covers breadboard assembly + validation only (no 3D-printed enclosure).
+
+**Open bugs:** PIR wake not triggering ModeManager sleep→listen transition (9id, P0) — firmware ISR works, harness gap. Two P1 bugs deferred (bgx: dead MQTT sub, b94: audio prefix).
+
+Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mode/sensor events, idle timeouts (listen 60s, active 300s), PIR wake (sleep→listen), Pipeline mode-aware audio gating, LCD face display publishing on mode transitions.
 
 ## Milestone Status
 
@@ -42,7 +46,13 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 - Two-track roadmap: Demo Track (frozen) + Platform Track (P1-P9)
 - Brain Router: Core's dispatch layer routing handler calls across tiers
 - Mem0 as primary memory layer (P2), Hermes as default brain (P1)
-- Demo ships current harness as-is — no Platform Track code before Apr 24
+- Demo scope reduced: breadboard prototype filming, no furnished casing required
+- P3-ASSY merged with 03-07: single hardware assembly task, breadboard scope only
+- Phase 6 complete: CoreSkill types, SkillExecutor, SpaceManager, MCP tools, core wiring, 34 tests — all waves shipped
+- Phase 7 planned: 6 gaps identified (G1-G6), 5 plans written (07-01 through 07-05), 5 design decisions locked
+- Phase 1 confirmed complete: firmware (MQTT, LCD, mic, VAD, WS audio, camera relay, BME280, PIR ISR) all built and validated
+- Platform Track P3/P4 already built as part of Phase 6 (ModeManager + SpaceManager)
+- Roadmap + beads audited and aligned with actual project state
 
 ## Roadmap Evolution
 
@@ -58,6 +68,7 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 05 | 01 | 15 min | 2 | 4 |
 | 05 | 02 | 20 min | 2 | 7 |
 | 05 | 03 | 10 min | 2 | 7 |
+| 06 | 01-05 | ~3h | 5 waves | 10+ |
 
 ### Quick Tasks Completed
 
@@ -69,4 +80,4 @@ Quick task 260420-4do complete: ModeManager wired into Core runtime — MQTT mod
 | 260420-4do | Mode Manager wired into Core | 2026-04-20 | d21750b | [260420-4do-xentient-ifd](.planning/quick/260420-4do-xentient-ifd/) |
 
 ---
-*State updated: 2026-04-20 (after quick-260420-4do)*
+*State updated: 2026-04-28 (Phase 7 planned. 5 plans: 07-01 to 07-05. Next: Execute gap fixes.)*

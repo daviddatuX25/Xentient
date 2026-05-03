@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import pino from 'pino';
-import { MqttClient, VADEvent } from '../comms/MqttClient';
+import { MqttClient } from '../comms/MqttClient';
 import { AudioServer } from '../comms/AudioServer';
 import { STTProvider, TTSProvider, LLMProvider, MemoryContext } from '../providers/types';
 import type { ModeManager } from './ModeManager';
@@ -94,43 +94,6 @@ export class Pipeline extends EventEmitter {
         return;
       }
       this.audioBuffer.push(chunk);
-    });
-
-    // STAGE 2: VAD gates determine utterance boundaries (via MQTT)
-    mqtt.on('vad', (event: VADEvent) => {
-      const mode = this.modeManager?.getMode() ?? 'active';
-
-      // sleep mode: ignore VAD events entirely
-      if (mode === 'sleep') return;
-
-      // listen mode: VAD start triggers transition to active
-      if (mode === 'listen' && event.type === 'start') {
-        this.modeManager?.transition('active');
-        this.modeManager?.resetIdleTimer();
-      }
-
-      // record mode: buffer audio but don't trigger full pipeline
-      if (mode === 'record') return;
-
-      if (event.type === 'start') {
-        logger.info('VAD start — buffering audio');
-        this.vadStartMs = Date.now();
-        this.audioBuffer = [];
-        this.audioBufferBytes = 0;
-        this.isListening = true;
-        this.isProcessing = false;
-
-        // [REVIEW FIX: HIGH] Hard time-cap: force process if VAD-end never arrives
-        if (this.vadTimeout) clearTimeout(this.vadTimeout);
-        this.vadTimeout = setTimeout(() => {
-          if (this.isListening) {
-            logger.warn({ limitMs: MAX_BUFFER_DURATION_MS }, 'VAD timeout — forcing utterance processing');
-            this.triggerProcess();
-          }
-        }, MAX_BUFFER_DURATION_MS);
-      } else if (event.type === 'end' && this.isListening && !this.isProcessing) {
-        this.triggerProcess();
-      }
     });
 
     // [REVIEW FIX: MEDIUM] WebSocket disconnect resets pipeline state

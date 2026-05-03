@@ -106,6 +106,7 @@
 | LCD Display | I2C 16x2 (PCF8574) | Xentient face — always-on status display |
 | Charge Controller | TP4056 | LiPo charge management (when USB-C present) |
 | Boost Converter | MT3608 | LiPo to regulated 5V system rail |
+| Battery Holder | Single 18650 plastic clip-in (~53x25x19mm) | Holds 18650 LiPo cell in Zone A cradle |
 | Connectors | JST-SH 1.0mm (4-pin, 6-pin) | Typed peripheral docking |
 
 ---

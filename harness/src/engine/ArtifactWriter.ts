@@ -17,7 +17,7 @@ import * as fs from "fs";
 import * as path from "path";
 import pino from "pino";
 
-const logger = pino({ name: "artifact-writer" });
+const logger = pino({ name: "artifact-writer" }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
 
 export interface ArtifactPaths {
   userAudio: string;
