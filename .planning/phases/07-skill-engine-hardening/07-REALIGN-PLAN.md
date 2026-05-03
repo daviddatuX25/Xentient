@@ -845,7 +845,7 @@ export interface BrainStreamEvent {
 
 ### Sprint 7: Pipeline.ts Cutover Gate
 
-**Goal:** Define and enforce the gate for removing Pipeline.ts from Core.
+**Goal:** Define and enforce the gate for removing Pipeline.ts from Core. The gate must cover both happy and failure paths — Pipeline.ts handles error cases that brain-basic must also cover before deletion is safe.
 
 #### 7.1 Write the cutover gate into CONTEXT.md
 
@@ -866,29 +866,36 @@ Pipeline.ts will be deleted from Core when ALL of the following are true:
    - Audio plays through the Node Base speaker
 3. A second test: Brain streams reasoning via `xentient_brain_stream` and it appears in the Dashboard
 4. No regression in existing voice pipeline functionality
+5. STT provider fails → Brain receives error notification via MCP and does not hang. (Failure-path test — happy path alone is not sufficient to safely delete Pipeline.ts, which currently handles STT failure, LLM timeout, and TTS provider error.)
 
-Until ALL four conditions are met, Pipeline.ts stays. No exceptions.
+Until ALL five conditions are met, Pipeline.ts stays. No exceptions.
 ```
 
-#### 7.2 Mark Pipeline.ts as deprecated
+#### 7.2 Mark Pipeline.ts as deprecated with responsibility surface
 
-Add a deprecation comment at the top of `engine/Pipeline.ts`:
+Add a deprecation comment at the top of `engine/Pipeline.ts` that explicitly lists what brain-basic must cover before deletion:
 
 ```typescript
 /**
- * @deprecated This module will be removed once the Brain Interface
- * is proven end-to-end. See CONTEXT.md "Pipeline.ts Cutover Gate".
+ * @deprecated — CUTOVER GATE in CONTEXT.md.
+ * Current responsibilities that brain-basic must cover before deletion:
+ *   - STT (Whisper) with timeout + error handling
+ *   - LLM routing with context injection
+ *   - TTS with provider fallback
+ *   - xentient_play_audio result validation
+ *   - Escalation ID correlation across the full chain
+ * Do NOT delete until all five are proven via brain-basic.
  * Do NOT add new features to this module.
  */
 ```
 
-**Deliverable:** Gate is documented. Pipeline.ts is marked deprecated but functional. No code is deleted yet.
+**Deliverable:** Gate is documented with 5 conditions (including failure path). Pipeline.ts is marked deprecated with explicit deletion checklist. No code is deleted yet.
 
 ---
 
 ### Sprint 8: Firmware Two-Task Model
 
-**Goal:** The ESP32 firmware implements the two-task FreeRTOS model with NodeProfile hot-swap.
+**Goal:** The ESP32 firmware implements the two-task FreeRTOS model with NodeProfile hot-swap. This is C/FreeRTOS on a physical ESP32-CAM — the risk isn't in writing it, it's in writing it wrong.
 
 #### 8.1 Add NodeProfile C struct to firmware/shared/messages.h
 
@@ -920,28 +927,39 @@ typedef struct {
 - Publishes events to MQTT based on `event_mask`
 - Controls actuators (LCD, speaker) when commanded
 - Checks `profileUpdateFlag` at end of each iteration
+- Registered with ESP32 task watchdog (`esp_task_wdt_add`); resets watchdog after each successful sensor read. If BME280 I2C lockup or PIR hang occurs, watchdog resets the chip → clean recovery instead of silent hang.
 
 **Task 2 — Config Task (Core 0, low priority):**
 - Sleeps 500ms
-- Wakes, checks MQTT inbox for `node_profile_set` message
-- If new profile arrived: validates it, copies to shared `pendingProfile`, sets `profileUpdateFlag = true`
+- Wakes, checks `profileUpdateFlag` — does NOT parse JSON (see 8.4)
+- If flag set: copies `pendingProfile` → `activeProfile` under critical section, clears flag, reconfigures sensors, sends `node_profile_ack`
 - Sleeps again
 - Never interrupts Task 1
 
-**Shared state (volatile, ISR-safe):**
+**Shared state (critical-section protected — NOT just volatile):**
+
+`volatile` prevents compiler register caching but does NOT prevent torn reads when copying a struct larger than 4 bytes on a 32-bit MCU. NodeProfile is ~40 bytes. Use `portENTER_CRITICAL` / `portEXIT_CRITICAL` around every memcpy.
+
 ```c
+static portMUX_TYPE profileMux = portMUX_INITIALIZER_UNLOCKED;
 volatile NodeProfile activeProfile;
 volatile NodeProfile pendingProfile;
 volatile bool profileUpdateFlag = false;
+char lastReceivedProfileId[32];  // echoes in ack regardless of swap timing
 ```
 
-**Hot-swap protocol:**
-1. Config Task receives new NodeProfile via MQTT
-2. Config Task copies to `pendingProfile`, sets `profileUpdateFlag = true`
-3. Work Task, at end of its iteration, checks flag
-4. If flag set: `activeProfile = pendingProfile; profileUpdateFlag = false;`
-5. Work Task reconfigures sampling rates and event emission from new `activeProfile`
-6. Work Task sends `node_profile_ack` with `status: "loaded"`
+**Hot-swap protocol (corrected for torn-write safety):**
+1. MQTT callback receives `node_profile_set` → parses JSON immediately in MQTT task context, validates, copies to `pendingProfile` under critical section, sets `profileUpdateFlag = true` (see 8.4)
+2. Config Task wakes, checks flag
+3. If flag set:
+   ```c
+   portENTER_CRITICAL(&profileMux);
+   memcpy((void*)&activeProfile, (void*)&pendingProfile, sizeof(NodeProfile));
+   profileUpdateFlag = false;
+   portEXIT_CRITICAL(&profileMux);
+   ```
+4. Config Task reconfigures sensor intervals and event emission from new `activeProfile`
+5. Config Task sends `node_profile_ack` with `profileId` from `lastReceivedProfileId` and `status: "loaded"`
 
 #### 8.3 Default NodeProfile on boot
 
@@ -957,19 +975,101 @@ const NodeProfile DEFAULT_PROFILE = {
 };
 ```
 
-**Deliverable:** Firmware boots with default profile. Receives `node_profile_set` via MQTT. Hot-swaps the profile. Sends `node_profile_ack`. All sensors respect the new intervals and event mask.
+#### 8.4 JSON parsing happens in MQTT callback, not Config Task
+
+Config Task must never parse JSON — stack overflow risk (unpredictable payload sizes) and heap fragmentation risk on long-running embedded systems. Parse and validate in the MQTT message callback (which runs in the MQTT task's context). If valid, copy fields into `pendingProfile` under the critical section. Config Task only does the guarded memcpy.
+
+```c
+// In MQTT message callback (runs in MQTT task context)
+void onMqttMessage(const char* topic, const char* payload) {
+  if (strstr(topic, "/profile/set")) {
+    NodeProfile parsed;
+    memset(&parsed, 0, sizeof(NodeProfile));
+    if (parseNodeProfileJson(payload, &parsed)) {
+      portENTER_CRITICAL(&profileMux);
+      memcpy((void*)&pendingProfile, &parsed, sizeof(NodeProfile));
+      strncpy(lastReceivedProfileId, parsed.profile_id, sizeof(lastReceivedProfileId) - 1);
+      profileUpdateFlag = true;
+      portEXIT_CRITICAL(&profileMux);
+    }
+  }
+}
+```
+
+#### 8.5 node_profile_ack echoes the received profileId
+
+Two rapid profile pushes (e.g. reconnect replay + new config activation) produce two acks. Core matches acks to pushes by `profileId`. The firmware stores the `profile_id` from the incoming JSON immediately in `lastReceivedProfileId` and echoes it in the ack regardless of whether the swap has completed.
+
+```c
+void sendProfileAck(const char* profileId, const char* status) {
+  char payload[128];
+  snprintf(payload, sizeof(payload),
+    "{\"v\":1,\"type\":\"node_profile_ack\",\"profileId\":\"%s\",\"status\":\"%s\"}",
+    profileId, status);
+  mqttClient.publish("xentient/node/{nodeId}/profile/ack", payload);
+}
+```
+
+#### 8.6 WiFi reconnect triggers MQTT reconnect
+
+WiFi and MQTT reconnect are independent on ESP32. When WiFi reconnects, the MQTT client must explicitly reconnect — this is NOT automatic with all ESP32 MQTT libraries.
+
+```c
+void onWifiConnected(WiFiEvent_t event) {
+  mqttClient.connect(MQTT_BROKER, MQTT_PORT);
+  // Core's reconnect handler will replay the active profile
+}
+```
+
+#### 8.7 Work Task watchdog registration
+
+```c
+// In Work Task setup
+esp_task_wdt_add(NULL);  // register this task with the watchdog
+
+// In Work Task loop, after each successful sensor read cycle
+esp_task_wdt_reset();
+```
+
+If the watchdog fires (default 5s timeout), the ESP32 resets. Core gets an MQTT disconnect, the reconnect handler replays the profile, and the node comes back clean. Much better than a silent hang where Core sees the node as alive but publishing nothing.
+
+#### 8.8 Hardware test protocol
+
+Before marking Sprint 8 done, run this physical verification checklist:
+
+**Boot tests:**
+- [ ] Node boots → publishes presence event within 10s
+- [ ] Default profile applied (pir_interval=1000, mic_mode=0, event_mask=0x01)
+
+**Profile push tests:**
+- [ ] Core sends `node_profile_set` → firmware sends `node_profile_ack` within 5s
+- [ ] PIR interval changes (verify with serial monitor timing)
+- [ ] mic_mode=1 enables VAD events (speak → VAD event published)
+- [ ] mic_mode=2 enables audio_chunk events (verify on MQTT topic)
+- [ ] event_mask=0x00 → no events published (silence test)
+
+**Failure recovery tests:**
+- [ ] Kill MQTT broker → restart → Core replays profile → ack received
+- [ ] Kill WiFi → restore → MQTT reconnects → profile replayed
+- [ ] Power cycle node mid-session → boots to default profile → Core detects via reconnect
+
+**Torn-write stress test:**
+- [ ] Send 10 `profile_set` messages in rapid succession → node never publishes corrupted sensor data (pir_interval > 60000 or mic_mode > 2)
+
+**Deliverable:** Firmware boots with default profile. Receives `node_profile_set` via MQTT. Hot-swaps the profile under critical section (no torn reads). Sends `node_profile_ack` echoing the received profileId. All sensors respect new intervals and event mask. Watchdog guards against sensor hangs. WiFi reconnect triggers MQTT reconnect. Hardware test protocol passes.
 
 ---
 
 ### Sprint 9: Documentation Realignment
 
-**Goal:** All docs reflect the configuration-centric architecture. No references to `activeMode`, `modeFilter`, or `BehavioralMode` remain.
+**Goal:** All docs reflect the configuration-centric architecture. No references to `activeMode`, `modeFilter`, or `BehavioralMode` remain. Robustness additions from Phase 7 patches are documented.
 
 #### 9.1 Update CONTEXT.md
 - Replace `activeMode` references with `activeConfig`
-- Add Pipeline.ts Cutover Gate section
+- Add Pipeline.ts Cutover Gate section (5 conditions)
 - Update "Current State" table with new component statuses
 - Update "Next Right Steps" to reflect realignment sprints
+- **Mark all 10 robustness patches as complete in the status table** — the pendingAcks map, 5s timeout → node_offline notification, onMqttReconnect() profile replay, ghost skill guard, atomic persistence, debounced writes, dead notification removal, composite trigger docs, atomic pack load, brainConnected callback. These are now core behaviors, not optional. The next person (or Brain, or evaluator) reading CONTEXT.md must see accurate status, not a stale snapshot from before the patches.
 
 #### 9.2 Update NODE-SKILLS.md
 - Add NodeSkill → NodeProfile compilation section
@@ -980,21 +1080,29 @@ const NodeProfile DEFAULT_PROFILE = {
 - Add `xentient_get_capabilities`, `xentient_get_skill_schema`, `xentient_subscribe_events`, `xentient_register_config`, `xentient_brain_stream` to Available Tools table
 - Add Event Subscription section (Channel 1.5 — passive observation)
 - Add Config Authoring section
+- **Document `xentient/node_offline` notification**: what triggers it (5s ack timeout on `node_profile_set`), what it contains (`nodeId`), and what Brain should do (don't try to activate configs on that node until `node_online` or reconnect).
 
 #### 9.4 Update SKILLS.md
 - Replace `modeFilter` with `configFilter` throughout
 - Add Configuration as a first-class concept in the skill ecosystem
 
-#### 9.5 Update PACKS.md
+#### 9.5 Update PACKS.md — complete runnable example pack
 - Add `configurations` and `nodeSkills` sections to pack manifest format
-- Add example pack with multiple configurations
+- **Write one complete, runnable example pack manifest** with at least:
+  - 2 configurations (e.g. "classroom" and "idle")
+  - 2 node roles (e.g. "ceiling-unit" and "teacher-desk")
+  - 1 NodeSkill per role
+  - `nodeAssignments` wired up in each configuration
+  - CoreSkill references
+- This single working example is worth more than all the schema documentation combined — it's what evaluators and Brain will use as their first template. Don't just document the schema; write something a person could copy, paste, and actually run.
 
 #### 9.6 Update ARCHITECTURE.md
 - Replace behavioral mode concept with configuration concept
 - Add NodeProfile compilation pipeline diagram
 - Add TransitionQueue to architecture diagram
+- **Add ack timeout + reconnect replay flow**: document the `pendingAcks` map, the 5s timeout → `node_offline` notification, and `onMqttReconnect()` profile replay. These are now core behaviors, not optional additions. The architecture diagram must show: Core pushes `node_profile_set` → starts 5s ack timer → if ack received → profile active / if timeout → `xentient/node_offline` notification. Also show: MQTT reconnect → Core replays last-known profile to each node.
 
-**Deliverable:** Zero references to `activeMode`/`modeFilter`/`BehavioralMode` in any doc. All docs consistently use `activeConfig`/`configFilter`/`Configuration`. New docs cover capability discovery, event subscription, config authoring.
+**Deliverable:** Zero references to `activeMode`/`modeFilter`/`BehavioralMode` in any doc. All docs consistently use `activeConfig`/`configFilter`/`Configuration`. Robustness additions are documented. PACKS.md has a runnable example pack. ARCHITECTURE.md shows ack timeout and reconnect flows.
 
 ---
 
@@ -1057,8 +1165,8 @@ Each sprint has its own test requirements:
 | 4 | Unit | EventSubscriptionManager rate-limits correctly, batches events, flushes on timer |
 | 5 | Unit + MCP | Register config adds to manifest, appears in capabilities, survives restart |
 | 6 | Unit + MCP | Brain stream relays to SSE, escalation_complete closes escalation |
-| 7 | Docs only | No tests needed |
-| 8 | Hardware | Flash firmware, send MQTT profile, verify ack, verify sensor intervals change |
+| 7 | Docs + Gate | Cutover gate documented with 5 conditions (incl. failure path). Pipeline.ts @deprecated lists 5 responsibilities |
+| 8 | Hardware + Stress | Flash firmware, run hardware test protocol (boot, profile push, failure recovery, torn-write stress). Critical-section memcpy, watchdog, MQTT reconnect, profileId echo |
 | 9 | Grep | Zero references to activeMode/modeFilter/BehavioralMode in any file |
 
 ---

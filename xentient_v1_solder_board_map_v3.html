@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xentient V1 — Solder Board Map v4</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;500;700&display=swap');
+
+  :root {
+    --bg:           #0a130a;
+    --panel-bg:     #101a10;
+    --panel-border: #223322;
+    --text-primary: #c8dfc4;
+    --text-secondary:#6a9466;
+    --text-dim:     #3d5e3a;
+    --accent:       #4ecb71;
+    --accent2:      #f0a060;
+    --font-mono:    'Share Tech Mono', monospace;
+    --font-ui:      'Exo 2', sans-serif;
+    --radius:       5px;
+
+    /* Bus colours */
+    --gnd-color:    #444441;
+    --v5-color:     #e24b4a;
+    --v33-color:    #f0997b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    padding: 1rem;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 0.75rem;
+  }
+  header h1 {
+    font-size: 13px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  header span { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); }
+
+  #board-wrap {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  #board-svg-container { position: relative; flex-shrink: 0; }
+  #wire-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+  #board-svg { cursor: crosshair; display: block; }
+
+  /* ── Info panel ── */
+  #info-panel {
+    flex: 1;
+    min-width: 240px;
+    max-width: 330px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+    font-size: 12px;
+    min-height: 320px;
+  }
+  #info-panel h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 5px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.03em;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  .section-title {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    margin: 9px 0 5px;
+    border-top: 1px solid var(--panel-border);
+    padding-top: 7px;
+  }
+  .wire-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 3px 0;
+    padding: 3px 4px;
+    border-radius: 3px;
+    transition: background 0.15s;
+  }
+  .wire-row:hover { background: rgba(78,203,113,0.05); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 3px currentColor; }
+  .wire-label { color: var(--text-primary); font-size: 11px; font-family: var(--font-mono); white-space: nowrap; }
+  .wire-dest  { color: var(--text-secondary); font-size: 10px; margin-left: auto; text-align: right; line-height: 1.3; }
+  .note {
+    margin-top: 9px;
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--panel-border);
+    padding-top: 8px;
+    line-height: 1.65;
+    font-style: italic;
+  }
+  #info-idle {
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.9;
+    font-family: var(--font-mono);
+    padding-top: 6px;
+  }
+  #info-idle .prompt {
+    color: var(--accent);
+    font-size: 10px;
+    margin-top: 10px;
+    display: block;
+    animation: blink 1.4s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  #wire-toggle {
+    margin-top: 11px;
+    width: 100%;
+    padding: 5px 10px;
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+    display: none;
+  }
+  #wire-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  #wire-toggle.active { background: rgba(78,203,113,0.08); border-color: var(--accent); color: var(--accent); }
+
+  #legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 12px;
+  }
+  .l-item { display: flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--text-dim); font-family: var(--font-mono); }
+  .l-dot   { width: 9px; height: 9px; border-radius: 2px; }
+
+  /* Wire draw animation */
+  .wire-path {
+    stroke-dasharray: 2000;
+    stroke-dashoffset: 2000;
+    animation: drawWire 0.55s ease-out forwards;
+  }
+  @keyframes drawWire { to { stroke-dashoffset: 0; } }
+  .wire-node-dot { opacity: 0; animation: popIn 0.2s ease-out 0.5s forwards; }
+  @keyframes popIn { to { opacity: 1; } }
+
+  /* Bus legend pill */
+  .bus-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9px; font-family: var(--font-mono);
+    padding: 1px 6px; border-radius: 3px;
+    margin-right: 4px;
+    font-weight: 700; letter-spacing: 0.06em;
+  }
+
+  /* ── Flip button & side indicator ── */
+  #side-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  #flip-btn {
+    padding: 5px 14px;
+    background: transparent;
+    border: 1px solid var(--accent2);
+    border-radius: 3px;
+    color: var(--accent2);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: all 0.2s;
+  }
+  #flip-btn:hover { background: rgba(240,160,96,0.1); }
+  #side-label {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  #side-label.backside { color: var(--accent2); }
+  #side-label.topside  { color: var(--accent);  }
+
+  #board-svg-container.topside-mode::after {
+    content: 'TOP SIDE';
+    position: absolute;
+    top: 6px; right: 10px;
+    font-size: 8px;
+    font-family: monospace;
+    color: var(--accent);
+    opacity: 0.5;
+    pointer-events: none;
+    letter-spacing: 0.15em;
+  }
+  #board-svg-container.backside-mode::after {
+    content: 'BACK SIDE';
+    position: absolute;
+    top: 6px; right: 10px;
+    font-size: 8px;
+    font-family: monospace;
+    color: var(--accent2);
+    opacity: 0.5;
+    pointer-events: none;
+    letter-spacing: 0.15em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Xentient V1 — Solder Board Map</h1>
+  <span>42 × 30 holes · 2.54 mm pitch · v4 — ESP32 DevKit (right half) + Battery (bottom-left) + I2C pull-ups — click any zone to trace wires</span>
+</header>
+
+<div style="display:flex; flex-direction:column; gap:8px;">
+  <div id="side-controls">
+    <button id="flip-btn" onclick="flipBoard()">⟳ Flip Board</button>
+    <span id="side-label" class="backside">▶ Back Side (solder)</span>
+  </div>
+  <div id="board-wrap">
+    <div id="board-svg-container" class="backside-mode">
+      <svg id="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="wire-svg"  xmlns="http://www.w3.org/2000/svg" style="pointer-events:none"></svg>
+    </div>
+
+    <div id="info-panel">
+      <div id="info-idle">
+        Board: 42 × 30 holes<br>
+        Pitch: 2.54 mm<br><br>
+        <span class="bus-pill" style="background:#1a1a18;color:#6a6a60">██</span>
+          <span style="color:var(--text-dim)">Row 0 — GND rail (top)</span><br>
+        <span class="bus-pill" style="background:#1a1a18;color:#6a6a60">██</span>
+          <span style="color:var(--text-dim)">Row 29 — GND rail (bottom)</span><br>
+        <span class="bus-pill" style="background:#3d150a;color:#e24b4a">██</span>
+          <span style="color:var(--text-dim)">Row 1 — 5 V rail</span><br>
+        <span class="bus-pill" style="background:#3d2010;color:#f0997b">██</span>
+          <span style="color:var(--text-dim)">Row 2 — 3.3 V rail</span><br><br>
+        Click a coloured zone to highlight<br>
+        its wires and bus endpoints.<br>
+        Use ⟳ Flip to switch Top/Back view.
+        <span class="prompt">▋ awaiting selection</span>
+      </div>
+      <div id="info-detail" style="display:none"></div>
+      <button id="wire-toggle" onclick="toggleWires()">Hide wires</button>
+    </div>
+  </div>
+</div>
+
+<div id="legend">
+  <div class="l-item"><div class="l-dot" style="background:#d85a30"></div>Power zone</div>
+  <div class="l-item"><div class="l-dot" style="background:#1a4a2a"></div>ESP32 DevKit</div>
+  <div class="l-item"><div class="l-dot" style="background:#1d9e75"></div>JST connectors</div>
+  <div class="l-item"><div class="l-dot" style="background:#7f77dd"></div>LCD header</div>
+  <div class="l-item"><div class="l-dot" style="background:#ba7517"></div>Cap/Battery</div>
+  <div class="l-item"><div class="l-dot" style="background:#b5781e"></div>Resistor</div>
+  <div class="l-item"><div class="l-dot" style="background:#639922"></div>E-Cap</div>
+  <div class="l-item"><div class="l-dot" style="background:#444441"></div>GND bus rail</div>
+  <div class="l-item"><div class="l-dot" style="background:#e24b4a"></div>5 V rail</div>
+  <div class="l-item"><div class="l-dot" style="background:#f0997b"></div>3.3 V rail</div>
+</div>
+
+<script>
+// ─── BOARD SIDE STATE ────────────────────────────────────────────────────────
+let isTopSide = false; // false = Back Side (default, wires visible), true = Top Side
+
+// ─── BOARD CONSTANTS ────────────────────────────────────────────────────────
+const COLS = 42, ROWS = 30;
+const PAD = 10, STEP = 9;
+const W = PAD*2 + (COLS-1)*STEP + 8;
+const H = PAD*2 + (ROWS-1)*STEP + 8;
+
+const colLabels = [
+  ...Array.from({length:26},(_,i)=>String.fromCharCode(65+i)),
+  ...Array.from({length:16},(_,i)=>'A'+String.fromCharCode(65+i))
+];
+const rowLabels = [
+  ...Array.from({length:26},(_,i)=>String.fromCharCode(65+i)),
+  '1','2','3','4'
+].reverse();
+
+function colX(c){ return PAD + 4 + c * STEP; }
+function rowY(r){ return PAD + 4 + r * STEP; }
+
+// ─── POWER BUS ROWS ─────────────────────────────────────────────────────────
+// Row 0  → GND top rail
+// Row 29 → GND bottom rail
+// Row 1  → 5 V rail
+// Row 2  → 3.3 V rail
+// We leave these rows zone-free so they read as solid bus rails.
+
+const GND_TOP_ROW    = 0;
+const GND_BOT_ROW    = 29;
+const V5_ROW         = 1;
+const V33_ROW        = 2;
+
+// Tap points: col positions where buses are most accessible
+// We'll draw the full rail as a thick line, then show taps as dots
+// GND taps (all components that go to GND pick nearest col in their zone)
+// We expose the raw row so routing can pick the exact column
+
+function gndTap(nearCol, preferBottom) {
+  const r = preferBottom ? GND_BOT_ROW : GND_TOP_ROW;
+  return { x: colX(nearCol), y: rowY(r) };
+}
+function v5Tap(nearCol)  { return { x: colX(nearCol), y: rowY(V5_ROW)  }; }
+function v33Tap(nearCol) { return { x: colX(nearCol), y: rowY(V33_ROW) }; }
+
+// Helper to get zone center-X, then pick bus tap at same col
+function zoneMidCol(z){ return Math.round((z.col1 + z.col2) / 2); }
+
+// ─── ZONES ──────────────────────────────────────────────────────────────────
+// Layout adjusted so nothing overlaps with bus rows 0-2 or 29
+// All components sit in rows 3-28.
+// Pin offsets: each zone lists pinRows[] — fractional row positions within zone
+// for per-pin wire fanning. pinRows are relative offsets within the zone height.
+
+const zones = [
+  /* ── A: TP4056 ── */
+  {
+    id:"tp4056", label:"A — TP4056", tag:"Power", side:"top",
+    color:"#d85a30", textColor:"#fff", tagBg:"#3d1e14", tagFg:"#e88060",
+    col1:0, row1:16, col2:9, row2:21,
+    pinOffsets: [0.2, 0.4, 0.6, 0.8],
+    wires:[
+      {dot:"#e24b4a", label:"BAT+",       dest:"→ 18650 holder +"},
+      {dot:"#e24b4a", label:"BAT−",       dest:"→ 18650 BAT− / GND rail"},
+      {dot:"#e24b4a", label:"OUT+ (5V)",   dest:"→ 5 V rail"},
+      {dot:"#444441", label:"OUT− / GND",  dest:"→ GND rail"},
+    ],
+    wireRoutes:[
+      {to:"battery",   color:"#e24b4a", label:"BAT+",    pinIdx:0, toPin:0},
+      {to:"battery",   color:"#444441", label:"BAT−",    pinIdx:1, toBus:"gnd", useBottom:true},
+      {toBus:"v5",     color:"#e24b4a", label:"OUT+→5V", pinIdx:2},
+      {toBus:"gnd",    color:"#444441", label:"GND",     pinIdx:3, useBottom:true},
+    ],
+    note:"OUT+ feeds 5V rail when USB connected (~5V passthrough). On battery, MT3608 boosts BAT+ (3.0–4.2V) to 5V. Do NOT connect both OUT+ and MT3608 OUT+ to 5V rail simultaneously — use a Schottky diode OR-ing scheme or wire MT3608 IN+ directly to BAT+ terminals, not OUT+."
+  },
+
+  /* ── B: 18650 Battery holder ── */
+  {
+    id:"battery", label:"B — 18650 holder", tag:"Power", side:"top",
+    color:"#ba7517", textColor:"#fff", tagBg:"#3d2a0a", tagFg:"#d9a040",
+    col1:10, row1:22, col2:41, row2:28,
+    pinOffsets:[0.35, 0.65],
+    wires:[
+      {dot:"#e24b4a", label:"BAT+ (red)",   dest:"→ TP4056 BAT+"},
+      {dot:"#444441", label:"BAT− (black)", dest:"→ TP4056 BAT− / GND rail"},
+    ],
+    wireRoutes:[
+      {to:"tp4056",  color:"#e24b4a", label:"BAT+",  pinIdx:0, toPin:0},
+      {toBus:"gnd",  color:"#444441", label:"BAT−",  pinIdx:1, useBottom:true},
+    ],
+    note:"Bottom-right of left half. Verify 18650 charged to ~3.7 V before inserting."
+  },
+
+  /* ── J1: INMP441 mic ── */
+  {
+    id:"j1", label:"J1 — INMP441 mic", tag:"JST 6-pin", side:"top",
+    color:"#1d9e75", textColor:"#fff", tagBg:"#0d3028", tagFg:"#3dc49a",
+    col1:14, row1:3, col2:20, row2:8,
+    pinOffsets:[0.1, 0.25, 0.42, 0.58, 0.75, 0.9],
+    wires:[
+      {dot:"#f0997b", label:"Pin 1 — VCC 3.3 V", dest:"← 3.3 V rail"},
+      {dot:"#444441", label:"Pin 2 — GND",       dest:"← GND rail"},
+      {dot:"#378add", label:"Pin 3 — BCLK",      dest:"← GPIO26"},
+      {dot:"#378add", label:"Pin 4 — LRCK",      dest:"← GPIO25"},
+      {dot:"#ba7517", label:"Pin 5 — DATA",      dest:"← GPIO35"},
+      {dot:"#444441", label:"Pin 6 — L/R",       dest:"→ GND (mono left)"},
+    ],
+    wireRoutes:[
+      {toBus:"v33",    color:"#f0997b", label:"3V3",          pinIdx:0},
+      {toBus:"gnd",    color:"#444441", label:"GND",          pinIdx:1, useBottom:false},
+      {to:"esp32",    color:"#85b7eb", label:"BCLK+LRCK+DATA→ESP32", pinIdx:2, toPin:5},
+      {toBus:"gnd",    color:"#444441", label:"L/R→GND",      pinIdx:5, useBottom:false},
+    ],
+    note:"GPIO35 is input-only. Tie pin 6 to GND before powering on."
+  },
+
+  /* ── J2: MAX98357A amp ── */
+  {
+    id:"j2", label:"J2 — MAX98357A amp", tag:"JST 6-pin", side:"top",
+    color:"#1d9e75", textColor:"#fff", tagBg:"#0d3028", tagFg:"#3dc49a",
+    col1:7, row1:9, col2:13, row2:14,
+    pinOffsets:[0.1, 0.25, 0.42, 0.58, 0.75, 0.9],
+    wires:[
+      {dot:"#97c459", label:"Pin 1 — VCC 5 V", dest:"← E3 cap+ (5V path)"},
+      {dot:"#444441", label:"Pin 2 — GND",     dest:"← E3 cap− (GND path)"},
+      {dot:"#378add", label:"Pin 3 — BCLK",   dest:"← GPIO26 (shared J1)"},
+      {dot:"#378add", label:"Pin 4 — LRC",    dest:"← GPIO25 (shared J1)"},
+      {dot:"#7f77dd", label:"Pin 5 — DIN",    dest:"← GPIO27"},
+      {dot:"#888780", label:"Pin 6 — GAIN",   dest:"NC — leave open (9 dB)"},
+    ],
+    wireRoutes:[
+      {to:"ecap_amp", color:"#97c459", label:"VCC←E3 cap+", pinIdx:0, toPin:0},
+      {to:"ecap_amp", color:"#444441", label:"GND←E3 cap−",  pinIdx:1, toPin:1},
+      {to:"esp32",color:"#7fc5e8", label:"BCLK+LRC+DIN→ESP32",pinIdx:2, toPin:6},
+    ],
+    note:"Power flows THROUGH E3 cap: 5V rail→cap+→VCC, GND rail→cap−→GND."
+  },
+
+  /* ── J3: BME280 ── */
+  {
+    id:"j3", label:"J3 — BME280 sensor", tag:"JST 6-pin", side:"top",
+    color:"#1d9e75", textColor:"#fff", tagBg:"#0d3028", tagFg:"#3dc49a",
+    col1:14, row1:9, col2:20, row2:14,
+    pinOffsets:[0.1, 0.25, 0.42, 0.58, 0.75, 0.9],
+    wires:[
+      {dot:"#f0997b", label:"Pin 1 — VCC 3.3 V", dest:"← 3.3 V rail"},
+      {dot:"#444441", label:"Pin 2 — GND",       dest:"← GND rail"},
+      {dot:"#85b7eb", label:"Pin 3 — SDA",       dest:"← GPIO21"},
+      {dot:"#85b7eb", label:"Pin 4 — SCL",       dest:"← GPIO22"},
+      {dot:"#888780", label:"Pin 5 — NC",        dest:"Leave unconnected"},
+      {dot:"#888780", label:"Pin 6 — NC",        dest:"Leave unconnected"},
+    ],
+    wireRoutes:[
+      {toBus:"v33",   color:"#f0997b", label:"3V3",     pinIdx:0},
+      {toBus:"gnd",   color:"#444441", label:"GND",     pinIdx:1, useBottom:false},
+      {to:"esp32",color:"#85b7eb", label:"SDA/SCL→ESP32", pinIdx:2, toPin:3},
+    ],
+    note:"I2C address 0x76. Shares SDA/SCL with LCD. External 4.7kΩ pull-ups on R zone."
+  },
+
+  /* ── H: LCD header ── */
+  {
+    id:"lcd", label:"H — LCD (I2C 4-pin)", tag:"Header", side:"top",
+    color:"#7f77dd", textColor:"#fff", tagBg:"#1e1c40", tagFg:"#9e98e8",
+    col1:0, row1:9, col2:6, row2:14,
+    pinOffsets:[0.2, 0.4, 0.6, 0.8],
+    wires:[
+      {dot:"#f0997b", label:"Pin 1 — VCC 3.3 V", dest:"← 3.3 V rail"},
+      {dot:"#444441", label:"Pin 2 — GND",       dest:"← GND rail"},
+      {dot:"#85b7eb", label:"Pin 3 — SDA",       dest:"← GPIO21 I2C"},
+      {dot:"#85b7eb", label:"Pin 4 — SCL",       dest:"← GPIO22 I2C"},
+    ],
+    wireRoutes:[
+      {toBus:"v33",   color:"#f0997b", label:"3V3",     pinIdx:0},
+      {toBus:"gnd",   color:"#444441", label:"GND",     pinIdx:1, useBottom:false},
+      {to:"esp32",   color:"#85b7eb", label:"SDA/SCL→ESP32", pinIdx:2, toPin:3},
+    ],
+    note:"I2C address 0x27 (PCF8574). Shares I2C bus with BME280. External 4.7kΩ pull-ups on R zone."
+  },
+
+  /* ── R: I2C Pull-up Resistors ── */
+  {
+    id:"r_i2c", label:"R — I2C Pull-ups", tag:"Resistor", side:"back",
+    color:"#b5781e", textColor:"#fff", tagBg:"#3d2a0a", tagFg:"#d9a040",
+    col1:14, row1:14, col2:19, row2:15,
+    pinOffsets:[0.15, 0.35, 0.65, 0.85],
+    wires:[
+      {dot:"#f0997b", label:"R1 top → 3.3V",  dest:"→ 3.3V rail"},
+      {dot:"#85b7eb", label:"R1 bot → SDA",    dest:"→ GPIO21 I2C SDA"},
+      {dot:"#f0997b", label:"R2 top → 3.3V",  dest:"→ 3.3V rail"},
+      {dot:"#85b7eb", label:"R2 bot → SCL",    dest:"→ GPIO22 I2C SCL"},
+    ],
+    wireRoutes:[
+      {toBus:"v33", color:"#f0997b", label:"R1→3V3",  pinIdx:0},
+      {to:"esp32",  color:"#85b7eb", label:"R1→SDA",   pinIdx:1, toPin:3},
+      {toBus:"v33", color:"#f0997b", label:"R2→3V3",  pinIdx:2},
+      {to:"esp32",  color:"#85b7eb", label:"R2→SCL",   pinIdx:3, toPin:4},
+    ],
+    note:"Two 4.7kΩ pull-up resistors on shared I2C bus. Each: one leg to 3.3V rail, other leg to SDA/SCL line. Required for reliable I2C on breadboard."
+  },
+
+  /* ── E3: E-Cap on 5V path to MAX98357A amp (T-junction) ── */
+  {
+    id:"ecap_amp", label:"E3 — E-Cap MAX98357A", tag:"E-Cap", side:"back",
+    color:"#639922", textColor:"#fff", tagBg:"#1a2e08", tagFg:"#8cc440",
+    col1:10, row1:16, col2:14, row2:21,
+    pinOffsets:[0.3, 0.7],
+    wires:[
+      {dot:"#97c459", label:"+ leg",  dest:"5V rail → cap+ → J2 VCC"},
+      {dot:"#444441", label:"− leg",  dest:"GND rail → cap− → J2 GND"},
+    ],
+    wireRoutes:[
+      {toBus:"v5",  color:"#97c459", label:"+←5V rail",   pinIdx:0},
+      {to:"j2",     color:"#97c459", label:"+→J2 VCC",    pinIdx:0, toPin:0},
+      {toBus:"gnd", color:"#444441", label:"−←GND rail",  pinIdx:1, useBottom:true},
+      {to:"j2",     color:"#444441", label:"−→J2 GND",    pinIdx:1, toPin:1},
+    ],
+    note:"Daisy chain: 5V rail→cap+→J2 VCC AND GND rail→cap−→J2 GND. Both paths through cap."
+  },
+
+  /* ── ESP32 DevKit board (full right half) ── */
+  {
+    id:"esp32", label:"ESP32 DevKit V1 (30-pin)", tag:"MCU", side:"top",
+    color:"#1a4a2a", textColor:"#a0d8a0", tagBg:"#0a2a10", tagFg:"#4ecb71",
+    col1:21, row1:3, col2:41, row2:21,
+    pinOffsets:[0.08, 0.18, 0.28, 0.38, 0.48, 0.58, 0.68, 0.78, 0.88, 0.95],
+    wires:[
+      {dot:"#e24b4a", label:"VIN (5V)",       dest:"← 5 V rail"},
+      {dot:"#f0997b", label:"3V3 out",        dest:"→ 3.3 V rail"},
+      {dot:"#444441", label:"GND",            dest:"← GND rail"},
+      {dot:"#85b7eb", label:"GPIO21 (SDA)",   dest:"→ J3, LCD"},
+      {dot:"#85b7eb", label:"GPIO22 (SCL)",   dest:"→ J3, LCD"},
+      {dot:"#85b7eb", label:"GPIO25 (LRCK)",  dest:"→ J1 pin 4, J2 pin 4"},
+      {dot:"#85b7eb", label:"GPIO26 (BCLK)",  dest:"→ J1 pin 3, J2 pin 3"},
+      {dot:"#85b7eb", label:"GPIO27 (DIN)",   dest:"→ J2 pin 5 (AMP)"},
+      {dot:"#85b7eb", label:"GPIO17 (U2TX)",   dest:"→ J5 CAM RX"},
+      {dot:"#85b7eb", label:"GPIO16 (U2RX)",   dest:"← J5 CAM TX"},
+    ],
+    wireRoutes:[
+      {toBus:"v5",   color:"#e24b4a", label:"VIN←5V",     pinIdx:0},
+      {toBus:"v33",  color:"#f0997b", label:"3V3→rail",    pinIdx:1},
+      {toBus:"gnd",  color:"#444441", label:"GND",          pinIdx:2, useBottom:true},
+      {to:"j3",     color:"#85b7eb", label:"SDA→BME",     pinIdx:3, toPin:2},
+      {to:"lcd",    color:"#85b7eb", label:"SCL→LCD",     pinIdx:4, toPin:2},
+      {to:"j1",     color:"#85b7eb", label:"BCLK+LRCK",    pinIdx:5, toPin:2},
+      {to:"j2",     color:"#7fc5e8", label:"BCLK+LRCK+DIN", pinIdx:6, toPin:2},
+    ],
+    note:"ESP32 DevKit occupies full right half. USB faces board edge. PWR, I2C, I2S all provided on-board. No separate PWR strip, I2C/I2S headers, or 3-pin misc strips needed."
+  },
+
+  /* ── J4: HC-SR501 PIR ── */
+  {
+    id:"j4", label:"J4 — HC-SR501 PIR", tag:"JST 4-pin", side:"top",
+    color:"#1d9e75", textColor:"#fff", tagBg:"#0d3028", tagFg:"#3dc49a",
+    col1:0, row1:3, col2:6, row2:8,
+    pinOffsets:[0.2, 0.4, 0.6, 0.8],
+    wires:[
+      {dot:"#97c459", label:"Pin 1 — VCC 5V",  dest:"← 5V rail (HC-SR501 needs 4.5V–20V)"},
+      {dot:"#444441", label:"Pin 2 — GND",  dest:"← GND rail"},
+      {dot:"#7f77dd", label:"Pin 3 — OUT",  dest:"→ GPIO13"},
+      {dot:"#888780", label:"Pin 4 — NC",   dest:"Leave unconnected"},
+    ],
+    wireRoutes:[
+      {toBus:"v5",   color:"#97c459", label:"5V",            pinIdx:0},
+      {toBus:"gnd",   color:"#444441", label:"GND",           pinIdx:1, useBottom:false},
+      {to:"esp32",    color:"#7f77dd", label:"OUT→GPIO13",    pinIdx:2, toPin:7},
+    ],
+    note:"Allow 30–60 s warm-up. HC-SR501 OUT goes HIGH on motion detect."
+  },
+
+  /* ── J5: ESP32-CAM ── */
+  {
+    id:"j5", label:"J5 — ESP32-CAM", tag:"JST 4-pin", side:"top",
+    color:"#1d9e75", textColor:"#fff", tagBg:"#0d3028", tagFg:"#3dc49a",
+    col1:7, row1:3, col2:13, row2:8,
+    pinOffsets:[0.2, 0.4, 0.6, 0.8],
+    wires:[
+      {dot:"#97c459", label:"Pin 1 — VCC 5V",  dest:"← 5V rail (must be 5V not 3.3V)"},
+      {dot:"#444441", label:"Pin 2 — GND",     dest:"← GND rail"},
+      {dot:"#85b7eb", label:"Pin 3 — U2TX",    dest:"← GPIO17 → CAM GPIO12 (RX)"},
+      {dot:"#85b7eb", label:"Pin 4 — U2RX",    dest:"← GPIO16 ← CAM GPIO2 (TX)"},
+    ],
+    wireRoutes:[
+      {toBus:"v5",   color:"#97c459", label:"VCC←5V rail",      pinIdx:0},
+      {toBus:"gnd",  color:"#444441", label:"GND",               pinIdx:1, useBottom:false},
+      {to:"esp32",   color:"#85b7eb", label:"TX→GPIO17→CAM12(RX)", pinIdx:2, toPin:8},
+      {to:"esp32",   color:"#85b7eb", label:"RX←GPIO16←CAM2(TX)", pinIdx:3, toPin:9},
+    ],
+    note:"ESP32-CAM requires 5V — do NOT power from 3.3V rail or it will brownout. UART remapped: CAM TX=GPIO2, CAM RX=GPIO12 (GPIO1/3 conflict with UART0). Flash via main ESP32 UART or dedicated programmer."
+  },
+
+  /* ── E1: Bulk Cap 5V rail ── */
+  {
+    id:"ecap_5v", label:"E1 — Cap 470µF 5V", tag:"E-Cap", side:"back",
+    color:"#639922", textColor:"#fff", tagBg:"#1a2e08", tagFg:"#8cc440",
+    col1:15, row1:16, col2:20, row2:18,
+    pinOffsets:[0.3, 0.7],
+    wires:[
+      {dot:"#97c459", label:"+ leg", dest:"→ 5V rail"},
+      {dot:"#444441", label:"− leg", dest:"→ GND rail"},
+    ],
+    wireRoutes:[
+      {toBus:"v5",  color:"#97c459", label:"+←5V",  pinIdx:0},
+      {toBus:"gnd", color:"#444441", label:"−→GND", pinIdx:1, useBottom:false},
+    ],
+    note:"Bulk decoupling on 5V rail. 16V+ rated, 470µF."
+  },
+
+  /* ── E2: Bulk Cap 3V3 rail ── */
+  {
+    id:"ecap_3v3", label:"E2 — Cap 100µF 3V3", tag:"E-Cap", side:"back",
+    color:"#639922", textColor:"#fff", tagBg:"#1a2e08", tagFg:"#8cc440",
+    col1:15, row1:19, col2:20, row2:21,
+    pinOffsets:[0.3, 0.7],
+    wires:[
+      {dot:"#f0997b", label:"+ leg", dest:"→ 3.3V rail"},
+      {dot:"#444441", label:"− leg", dest:"→ GND rail"},
+    ],
+    wireRoutes:[
+      {toBus:"v33", color:"#f0997b", label:"+←3V3", pinIdx:0},
+      {toBus:"gnd", color:"#444441", label:"−→GND", pinIdx:1, useBottom:false},
+    ],
+    note:"Output decoupling on 3.3V rail. 10V+ rated, 100µF."
+  },
+
+  /* ── MT3608 ── */
+  {
+    id:"mt3608", label:"C — MT3608 Boost", tag:"Boost", side:"top",
+    color:"#d85a30", textColor:"#fff", tagBg:"#3d1e14", tagFg:"#e88060",
+    col1:0, row1:22, col2:9, row2:28,
+    pinOffsets:[0.2, 0.4, 0.6, 0.8],
+    wires:[
+      {dot:"#f0a060", label:"IN+",         dest:"← TP4056 OUT+"},
+      {dot:"#444441", label:"IN− / GND",   dest:"→ GND rail"},
+      {dot:"#e24b4a", label:"OUT+",        dest:"→ 5V rail"},
+      {dot:"#444441", label:"OUT− / GND",  dest:"→ GND rail"},
+    ],
+    wireRoutes:[
+      {to:"tp4056",  color:"#f0a060", label:"IN+←TP4056", pinIdx:0, toPin:2},
+      {toBus:"gnd",  color:"#444441", label:"IN− GND",    pinIdx:1, useBottom:true},
+      {toBus:"v5",   color:"#e24b4a", label:"OUT+→5V",   pinIdx:2},
+      {toBus:"gnd",  color:"#444441", label:"OUT− GND",  pinIdx:3, useBottom:true},
+    ],
+    note:"Calibrate OUT+ to 4.95–5.05V before connecting to 5V rail."
+  },
+];
+
+// ─── BUS GEOMETRY HELPERS ────────────────────────────────────────────────────
+function pinXY(z, pinIdx) {
+  // Returns pixel {x, y} for a given pin inside zone z
+  const offsets = z.pinOffsets || [0.5];
+  const t = offsets[Math.min(pinIdx, offsets.length - 1)];
+  const x = colX(z.col1) + t * (colX(z.col2) - colX(z.col1));
+  const y = (rowY(z.row1) + rowY(z.row2)) / 2;
+  return { x, y };
+}
+
+function busEndpoint(route, fromZone) {
+  const midCol = zoneMidCol(fromZone);
+  if (route.toBus === 'gnd') {
+    const r = route.useBottom ? GND_BOT_ROW : GND_TOP_ROW;
+    return { x: colX(midCol), y: rowY(r) };
+  }
+  if (route.toBus === 'v5')  return { x: colX(midCol), y: rowY(V5_ROW) };
+  if (route.toBus === 'v33') return { x: colX(midCol), y: rowY(V33_ROW) };
+  return null;
+}
+
+function zoneMidCol(z) { return Math.round((z.col1 + z.col2) / 2); }
+
+// ─── RENDERING ───────────────────────────────────────────────────────────────
+const svg     = document.getElementById('board-svg');
+const wireSvg = document.getElementById('wire-svg');
+
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+svg.setAttribute('width', W);
+svg.setAttribute('height', H);
+wireSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+wireSvg.setAttribute('width', W);
+wireSvg.setAttribute('height', H);
+
+function ns(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+function attr(el, obj){ for(const k in obj) el.setAttribute(k, obj[k]); }
+
+function zoneRect(z){
+  return {
+    x: colX(z.col1) - 3.5,
+    y: rowY(z.row1) - 3.5,
+    w: colX(z.col2) - colX(z.col1) + 7,
+    h: rowY(z.row2) - rowY(z.row1) + 7
+  };
+}
+
+function buildBoard(){
+  svg.innerHTML = '';
+
+  // PCB background
+  const bg = ns('rect');
+  attr(bg, {x:0, y:0, width:W, height:H, rx:6, fill:'#182e16', stroke:'#0d1e0b', 'stroke-width':'2'});
+  svg.appendChild(bg);
+
+  // ── Power bus rail backgrounds ──
+  const busRails = [
+    { row: GND_TOP_ROW, color:'#1e1e1a', stroke:'#444441', label:'GND' },
+    { row: GND_BOT_ROW, color:'#1e1e1a', stroke:'#444441', label:'GND' },
+    { row: V5_ROW,      color:'#3d150a', stroke:'#e24b4a', label:'5V' },
+    { row: V33_ROW,     color:'#3d200e', stroke:'#f0997b', label:'3V3' },
+  ];
+  busRails.forEach(b => {
+    const rx = colX(0) - 4;
+    const ry = rowY(b.row) - 3;
+    const rw = colX(COLS-1) - colX(0) + 8;
+    const rh = 6;
+    const r = ns('rect');
+    attr(r, { x:rx, y:ry, width:rw, height:rh, rx:2, fill:b.color, stroke:b.stroke, 'stroke-width':'0.7', opacity:'0.9' });
+    svg.appendChild(r);
+
+    // Rail label at left
+    const lt = ns('text');
+    attr(lt, { x: rx - 1, y: ry + rh/2 + 1, 'text-anchor':'end', 'dominant-baseline':'middle',
+               fill: b.stroke, 'font-size':'4.5', 'font-family':'monospace', 'font-weight':'700' });
+    lt.textContent = b.label;
+    svg.appendChild(lt);
+
+    // Tap dots along the rail every ~8 cols
+    for(let c = 0; c < COLS; c += 8) {
+      const td = ns('circle');
+      attr(td, { cx: colX(c), cy: rowY(b.row), r:'1.8', fill:b.stroke, opacity:'0.6' });
+      svg.appendChild(td);
+    }
+  });
+
+  // Grid holes (skip bus rows & zone cells)
+  const busRows = new Set([GND_TOP_ROW, GND_BOT_ROW, V5_ROW, V33_ROW]);
+  for(let r = 0; r < ROWS; r++){
+    for(let c = 0; c < COLS; c++){
+      if(busRows.has(r)) continue;
+      const inZone = zones.some(z => (isTopSide ? z.side==='top' : z.side==='back'||!z.side) && c>=z.col1 && c<=z.col2 && r>=z.row1 && r<=z.row2);
+      if(inZone) continue;
+      const circle = ns('circle');
+      attr(circle, { cx:colX(c), cy:rowY(r), r:'1.8', fill:'#2a5025', stroke:'#1a4018', 'stroke-width':'0.4' });
+      svg.appendChild(circle);
+    }
+  }
+
+  // Grid lines (subtle, skip bus rows)
+  for(let r = 0; r < ROWS; r++){
+    if(busRows.has(r)) continue;
+    const line = ns('line');
+    attr(line, { x1:colX(0), x2:colX(COLS-1), y1:rowY(r), y2:rowY(r), stroke:'#1e3f1b', 'stroke-width':'0.3' });
+    svg.appendChild(line);
+  }
+  for(let c = 0; c < COLS; c++){
+    const line = ns('line');
+    attr(line, { x1:colX(c), x2:colX(c), y1:rowY(3), y2:rowY(ROWS-2), stroke:'#1e3f1b', 'stroke-width':'0.3' });
+    svg.appendChild(line);
+  }
+
+  // Zones (filtered by current side)
+  const visibleZones = zones.filter(z => {
+    if(isTopSide)  return z.side === 'top';
+    return z.side === 'back' || !z.side;
+  });
+  visibleZones.forEach(z => {
+    const r = zoneRect(z);
+    const rect = ns('rect');
+    attr(rect, { x:r.x, y:r.y, width:r.w, height:r.h, rx:3,
+                 fill:z.color, opacity:'0.88', 'data-id':z.id });
+    rect.style.cursor = 'pointer';
+    svg.appendChild(rect);
+
+    // Zone label
+    const maxW = r.w;
+    const txt = ns('text');
+    attr(txt, { x: r.x + r.w/2, y: r.y + r.h/2 + 1,
+                'text-anchor':'middle', 'dominant-baseline':'middle',
+                fill: z.textColor, 'font-size': r.h > 42 ? '6.5' : '5.5',
+                'font-family':'monospace', 'pointer-events':'none', 'font-weight':'700' });
+    txt.textContent = z.label.length > Math.floor(maxW/5) ? z.label.slice(0, Math.floor(maxW/5)-1)+'…' : z.label;
+    svg.appendChild(txt);
+
+    // Per-pin dot marks along zone
+    if (z.pinOffsets) {
+      z.pinOffsets.forEach(t => {
+        const px = colX(z.col1) + t * (colX(z.col2) - colX(z.col1));
+        const py = rowY(z.row1) + 2;
+        const pd = ns('circle');
+        attr(pd, { cx:px, cy:py, r:'1.5', fill:'#ffffff', opacity:'0.3', 'pointer-events':'none' });
+        svg.appendChild(pd);
+      });
+    }
+
+    rect.addEventListener('click', () => showInfo(z));
+  });
+
+  // Column rulers (bottom)
+  for(let c = 0; c < COLS; c += 5){
+    const t = ns('text');
+    attr(t, { x:colX(c), y:H-1, 'text-anchor':'middle', fill:'#3a7035', 'font-size':'4', 'font-family':'monospace' });
+    t.textContent = colLabels[c];
+    svg.appendChild(t);
+  }
+  // Row rulers (right)
+  for(let r = 0; r < ROWS; r += 5){
+    const t = ns('text');
+    attr(t, { x:W-2, y:rowY(r)+1.5, 'text-anchor':'end', fill:'#3a7035', 'font-size':'4', 'font-family':'monospace' });
+    t.textContent = rowLabels[r];
+    svg.appendChild(t);
+  }
+}
+
+// ─── WIRE DRAWING ─────────────────────────────────────────────────────────────
+let wiresVisible = true;
+let lastZone = null;
+
+function toggleWires(){
+  wiresVisible = !wiresVisible;
+  wireSvg.style.display = wiresVisible ? '' : 'none';
+  const btn = document.getElementById('wire-toggle');
+  btn.textContent = wiresVisible ? 'Hide wires' : 'Show wires';
+  btn.classList.toggle('active', wiresVisible);
+}
+
+function flipBoard(){
+  isTopSide = !isTopSide;
+
+  const label    = document.getElementById('side-label');
+  const container = document.getElementById('board-svg-container');
+  const wireToggleBtn = document.getElementById('wire-toggle');
+
+  // RESET FIRST — clear wires and info before rebuilding
+  lastZone = null;
+  wireSvg.innerHTML = '';
+  document.getElementById('info-idle').style.display = 'block';
+  document.getElementById('info-detail').style.display = 'none';
+  wireToggleBtn.style.display = 'none';
+  buildBoard();
+
+  // THEN update labels for the new side
+  if(isTopSide){
+    label.textContent = '▶ Top Side (components)';
+    label.className   = 'topside';
+    container.className = 'topside-mode';
+  } else {
+    label.textContent = '▶ Back Side (solder)';
+    label.className   = 'backside';
+    container.className = 'backside-mode';
+  }
+}
+
+function drawWires(z){
+  wireSvg.innerHTML = '';
+  if(!z.wireRoutes || z.wireRoutes.length === 0) return;
+
+  // First draw the full bus rails as glowing lines
+  const busHighlights = new Set();
+  z.wireRoutes.forEach(route => {
+    if(route.toBus) busHighlights.add(route.toBus + (route.useBottom?'_bot':'_top'));
+  });
+
+  // Draw highlighted bus segments
+  busHighlights.forEach(key => {
+    const isBotGnd = key === 'gnd_bot';
+    const isTopGnd = key === 'gnd_top';
+    const isGnd    = key.startsWith('gnd');
+    const isV5     = key === 'v5';
+    const isV33    = key === 'v33';
+    const row      = isTopGnd ? GND_TOP_ROW : isBotGnd ? GND_BOT_ROW : isV5 ? V5_ROW : V33_ROW;
+    const color    = isGnd ? '#888880' : isV5 ? '#e24b4a' : '#f0997b';
+    const gw       = ns('line');
+    attr(gw, { x1:colX(0), y1:rowY(row), x2:colX(COLS-1), y2:rowY(row),
+               stroke:color, 'stroke-width':'3', 'stroke-opacity':'0.35', 'stroke-linecap':'round' });
+    gw.classList.add('wire-path');
+    wireSvg.appendChild(gw);
+    const gl = ns('line');
+    attr(gl, { x1:colX(0), y1:rowY(row), x2:colX(COLS-1), y2:rowY(row),
+               stroke:color, 'stroke-width':'1.2', 'stroke-opacity':'0.9', 'stroke-linecap':'round',
+               'stroke-dasharray':'4 3' });
+    gl.classList.add('wire-path');
+    wireSvg.appendChild(gl);
+
+    // Label the bus
+    const bl = ns('text');
+    attr(bl, { x: colX(COLS-1)+4, y: rowY(row)+1.5, fill:color, 'font-size':'5',
+               'font-family':'monospace', 'font-weight':'700' });
+    bl.textContent = isGnd ? 'GND' : isV5 ? '5V' : '3V3';
+    bl.style.opacity = '0';
+    bl.style.animation = 'popIn 0.25s ease-out 0.4s forwards';
+    wireSvg.appendChild(bl);
+  });
+
+  // Draw each wire route
+  z.wireRoutes.forEach((route, i) => {
+    const fromPt = pinXY(z, route.pinIdx ?? 0);
+    let toPt;
+
+    if(route.toBus) {
+      toPt = busEndpoint(route, z);
+    } else {
+      const targetZone = zones.find(zz => zz.id === route.to);
+      if(!targetZone) return;
+      toPt = pinXY(targetZone, route.toPin ?? 0);
+    }
+
+    const delay = i * 0.1;
+
+    // Compute orthogonal-ish curve (elbow routing feels cleaner)
+    // midpoint slightly offset for separation
+    const offset = (i - z.wireRoutes.length / 2) * 3;
+    const mx = (fromPt.x + toPt.x) / 2 + offset;
+    const my = (fromPt.y + toPt.y) / 2 - Math.abs(toPt.x - fromPt.x) * 0.15;
+    const d = `M ${fromPt.x.toFixed(1)} ${fromPt.y.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${toPt.x.toFixed(1)} ${toPt.y.toFixed(1)}`;
+
+    // Shadow
+    const shadow = ns('path');
+    attr(shadow, { d, fill:'none', stroke:'#000000', 'stroke-width':'3.5', 'stroke-opacity':'0.4', 'stroke-linecap':'round' });
+    shadow.style.animationDelay = `${delay}s`;
+    shadow.classList.add('wire-path');
+    wireSvg.appendChild(shadow);
+
+    // Main wire
+    const path = ns('path');
+    attr(path, { d, fill:'none', stroke:route.color, 'stroke-width':'1.8', 'stroke-linecap':'round',
+                 'stroke-dasharray':'2000', 'stroke-dashoffset':'2000' });
+    path.style.animationDelay = `${delay}s`;
+    path.classList.add('wire-path');
+    wireSvg.appendChild(path);
+
+    // Wire label near destination
+    const lx = fromPt.x * 0.3 + toPt.x * 0.7;
+    const ly = fromPt.y * 0.3 + toPt.y * 0.7 - 4;
+    const labelEl = ns('text');
+    attr(labelEl, { x:lx.toFixed(1), y:ly.toFixed(1), 'text-anchor':'middle',
+                    fill:route.color, 'font-size':'4.5', 'font-family':'monospace', 'font-weight':'700',
+                    'pointer-events':'none' });
+    labelEl.style.opacity = '0';
+    labelEl.style.animation = `popIn 0.2s ease-out ${delay+0.45}s forwards`;
+    labelEl.textContent = route.label;
+    wireSvg.appendChild(labelEl);
+
+    // Destination endpoint dot
+    const endDot = ns('circle');
+    attr(endDot, { cx:toPt.x.toFixed(1), cy:toPt.y.toFixed(1), r:'3.5',
+                   fill:route.color, stroke:'#fff', 'stroke-width':'0.8' });
+    endDot.classList.add('wire-node-dot');
+    endDot.style.animationDelay = `${delay+0.45}s`;
+    wireSvg.appendChild(endDot);
+
+    // Source pin dot (first wire only adds source ring, rest just smaller dot)
+    const srcDot = ns('circle');
+    attr(srcDot, { cx:fromPt.x.toFixed(1), cy:fromPt.y.toFixed(1), r: i===0 ? '4' : '2.5',
+                   fill: i===0 ? '#fff' : route.color,
+                   stroke: z.color, 'stroke-width': i===0 ? '1.5' : '0.5' });
+    srcDot.classList.add('wire-node-dot');
+    srcDot.style.animationDelay = `${delay}s`;
+    wireSvg.appendChild(srcDot);
+  });
+}
+
+// ─── INFO PANEL ───────────────────────────────────────────────────────────────
+function showInfo(z){
+  lastZone = z;
+  document.getElementById('info-idle').style.display = 'none';
+  const d = document.getElementById('info-detail');
+  d.style.display = 'block';
+  document.getElementById('wire-toggle').style.display = 'block';
+
+  let html = `<h3>${z.label}</h3>`;
+  html += `<span class="tag" style="background:${z.tagBg};color:${z.tagFg}">${z.tag}</span>`;
+
+  html += `<div class="section-title">Pin connections</div><div>`;
+  (z.wires || []).forEach(w => {
+    html += `<div class="wire-row">
+      <div class="dot" style="background:${w.dot}"></div>
+      <span class="wire-label">${w.label}</span>
+      <span class="wire-dest">${w.dest}</span>
+    </div>`;
+  });
+  html += `</div>`;
+
+  if(z.wireRoutes && z.wireRoutes.length > 0){
+    html += `<div class="section-title">Wire routes${isTopSide ? '' : ' (back of board)'}</div><div>`;
+    (z.wireRoutes || []).forEach(r => {
+      let destLabel;
+      if(r.toBus === 'gnd') destLabel = `GND rail (${r.useBottom ? 'bottom row' : 'top row'})`;
+      else if(r.toBus === 'v5') destLabel = '5 V rail (row 1)';
+      else if(r.toBus === 'v33') destLabel = '3.3 V rail (row 2)';
+      else destLabel = zones.find(zz=>zz.id===r.to)?.label || r.to;
+      html += `<div class="wire-row">
+        <div class="dot" style="background:${r.color}"></div>
+        <span class="wire-label" style="font-size:10px">${r.label}</span>
+        <span class="wire-dest">${destLabel}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if(z.note) html += `<div class="note">${z.note}</div>`;
+  d.innerHTML = html;
+
+  // Dim all other zones
+  svg.querySelectorAll('rect[data-id]').forEach(el => {
+    const sel = el.getAttribute('data-id') === z.id;
+    el.setAttribute('opacity', sel ? '1' : '0.22');
+    el.setAttribute('stroke', sel ? '#ffffff' : 'none');
+    el.setAttribute('stroke-width', '2');
+  });
+
+  if(wiresVisible) drawWires(z);
+}
+
+buildBoard();
+</script>
+</body>
+</html>

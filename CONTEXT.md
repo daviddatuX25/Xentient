@@ -308,21 +308,22 @@ This is what Hermes's `skill-improver` meta-skill does. Xentient is the platform
 | Core: ModeManager | Complete |
 | Core: SpaceManager | Complete |
 | Core: SkillExecutor (heartbeat loop) | Complete |
-| Core: MCP server (8 tools) | Complete |
+| Core: MCP server (8+ tools) | Complete |
 | Core: ControlServer (16+ REST endpoints) | Complete |
 | Core: Observability SSE (10 event types) | Complete |
 | Core: Web Dashboard | Complete |
 | Core: Pipeline.ts (STT→LLM→TTS inside Core) | Wrong layer — DEPRECATED, see cutover gate below |
-| Core: Configuration system (activeConfig) | Not built — realignment Sprint 1-2 |
-| Core: TransitionQueue | Not built — realignment Sprint 2 |
-| Core: Capability discovery MCP tools | Not built — realignment Sprint 3 |
-| Core: Event subscription manager | Not built — realignment Sprint 4 |
-| Core: Brain stream relay | Not built — realignment Sprint 6 |
+| Core: Configuration system (activeConfig) | Complete |
+| Core: TransitionQueue | Complete |
+| Core: Capability discovery MCP tools | Complete |
+| Core: Event subscription manager | Complete |
+| Core: Brain stream relay | Complete |
+| Core: Robustness patches (10 gaps) | Complete — pendingAcks map, 5s timeout → node_offline, onMqttReconnect() profile replay, ghost skill guard, atomic persistence, debounced writes, dead notification removal, composite trigger docs, atomic pack load, brainConnected callback |
 | Brain: brain-basic MCP client | Working, correct layer |
 | Brain: Separation into standalone process | Partial — brain-basic works but Brain Interface not formalized |
-| Brain: Brain Feed streaming | Not built — realignment Sprint 6 |
-| L0: Node Skill → NodeProfile compilation | Not built — realignment Sprint 1 |
-| L0: Firmware two-task model + hot-swap | Not built — realignment Sprint 8 |
+| Brain: Brain Feed streaming | Complete |
+| L0: Node Skill → NodeProfile compilation | Complete |
+| L0: Firmware two-task model + hot-swap | Complete |
 | Brain: Hermes adapter | Not built |
 | Hosting: Core/Brain deployment guide | Not built |
 
@@ -330,7 +331,7 @@ This is what Hermes's `skill-improver` meta-skill does. Xentient is the platform
 
 Pipeline.ts will be deleted from Core when ALL of the following are true:
 
-1. Realignment Sprints 1-6 are complete
+1. Realignment Sprints 1-8 are complete (DONE)
 2. brain-basic successfully processes a voice escalation end-to-end:
    - Receives `xentient/skill_escalated` notification
    - Runs STT on the audio payload
@@ -340,8 +341,9 @@ Pipeline.ts will be deleted from Core when ALL of the following are true:
    - Audio plays through the Node Base speaker
 3. A second test: Brain streams reasoning via `xentient_brain_stream` and it appears in the Dashboard
 4. No regression in existing voice pipeline functionality
+5. STT provider fails → Brain receives error notification via MCP and does not hang. (Failure-path test — happy path alone is not sufficient to safely delete Pipeline.ts, which currently handles STT failure, LLM timeout, and TTS provider error.)
 
-Until ALL four conditions are met, Pipeline.ts stays. No exceptions.
+Until ALL five conditions are met, Pipeline.ts stays. No exceptions.
 
 ---
 

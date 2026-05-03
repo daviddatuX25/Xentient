@@ -50,6 +50,18 @@ static void discard_reassembly() {
     s_nextChunkIdx = 0;
 }
 
+static void reset_rx();  // forward declaration for reset_and_flush
+
+// --- Hard resync: discard reassembly, flush UART RX buffer, reset state machine ---
+static void reset_and_flush() {
+    discard_reassembly();
+    reset_rx();
+    // Drain any buffered garbage bytes so next sync is clean
+    while (CamSerial.available()) {
+        CamSerial.read();
+    }
+}
+
 // --- Forward reassembled JPEG over shared WebSocket ---
 // Format per CONTRACTS.md:
 //   [0xCA][frame_id:uint16 LE][total_size:uint32 LE][data...]
@@ -134,7 +146,7 @@ static void process_chunk(uint16_t frameId, uint8_t chunkIdx, uint8_t chunkTotal
         s_gapDrops++;
         Serial.printf("[CAM-RELAY] Chunk gap: expected %u got %u — discarding frame %u\n",
                       s_nextChunkIdx, chunkIdx, frameId);
-        discard_reassembly();
+        reset_and_flush();
         return;
     }
     s_nextChunkIdx++;
@@ -197,6 +209,7 @@ static void reset_rx() {
 }
 
 void cam_relay_init() {
+    CamSerial.setRxBufferSize(2048);
     CamSerial.begin(CAM_BAUD, SERIAL_8N1, PIN_CAM_RX, PIN_CAM_TX);
     reset_rx();
     discard_reassembly();
@@ -211,7 +224,7 @@ void cam_relay_loop() {
         Serial.printf("[CAM-RELAY] Timeout: discarding partial frame %u (%u bytes after %lus)\n",
                       s_curFrameId, (unsigned)s_camBufLen, elapsed);
         s_timeoutDrops++;
-        discard_reassembly();
+        reset_and_flush();
     }
 
     // --- Read available UART bytes ---
@@ -284,11 +297,12 @@ void cam_relay_loop() {
                     s_crcDrops++;
                     Serial.printf("[CAM-RELAY] CRC mismatch on frame %u chunk %u — dropping\n",
                                   frameId, chunkIdx);
+                    reset_and_flush();  // already resets state + flushes UART
                 } else {
                     process_chunk(frameId, chunkIdx, chunkTotal, s_rxData, s_rxDataLen);
+                    reset_rx();
                 }
             }
-            reset_rx();
             break;
         }
     }

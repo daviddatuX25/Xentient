@@ -20,14 +20,13 @@ export function wireMcpEvents(
     if (d.peripheralType === PERIPHERAL_IDS.PIR && d.payload?.motion) {
       sensorCache.motion = true;
       sensorCache.lastMotionAt = Date.now();
-      // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-      server.notification({
+      server.server.notification({
         method: MCP_EVENTS.motion_detected,
         params: {
           timestamp: Date.now(),
           nodeBaseId: mqtt.nodeId,
         },
-      }).catch((err: Error) => logger.error({ err }, "Failed to send motion_detected event"));
+      } as any).catch((err: Error) => logger.error({ err }, "Failed to send motion_detected event"));
     }
 
     // sensor_update: BME280 periodic -> Brain
@@ -36,15 +35,14 @@ export function wireMcpEvents(
       sensorCache.temperature = p.temperature ?? sensorCache.temperature;
       sensorCache.humidity = p.humidity ?? sensorCache.humidity;
       sensorCache.pressure = p.pressure ?? sensorCache.pressure;
-      // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-      server.notification({
+      server.server.notification({
         method: MCP_EVENTS.sensor_update,
         params: {
           temperature: sensorCache.temperature!,
           humidity: sensorCache.humidity!,
           pressure: sensorCache.pressure!,
         },
-      }).catch((err: Error) => logger.error({ err }, "Failed to send sensor_update event"));
+      } as any).catch((err: Error) => logger.error({ err }, "Failed to send sensor_update event"));
     }
   });
 
@@ -52,21 +50,19 @@ export function wireMcpEvents(
   mqtt.on("triggerPipeline", (data: unknown) => {
     const d = data as { source?: string; stage?: string };
     if (d.source === "voice" && d.stage === "start") {
-      // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-      server.notification({
+      server.server.notification({
         method: MCP_EVENTS.voice_start,
         params: { timestamp: Date.now() },
-      }).catch((err: Error) => logger.error({ err }, "Failed to send voice_start event"));
+      } as any).catch((err: Error) => logger.error({ err }, "Failed to send voice_start event"));
     }
     // voice_end with audio buffer is handled in core.ts (AudioAccumulator)
   });
 
   // mode_changed: ModeManager transition -> Brain
   modeManager.on("modeChange", ({ from, to }: ModeChangeEvent) => {
-    // @ts-expect-error McpServer.notification() exists at runtime but is not on the high-level type
-    server.notification({
+    server.server.notification({
       method: MCP_EVENTS.mode_changed,
       params: { from, to, timestamp: Date.now() },
-    }).catch((err: Error) => logger.error({ err }, "Failed to send mode_changed event"));
+    } as any).catch((err: Error) => logger.error({ err }, "Failed to send mode_changed event"));
   });
 }

@@ -6,6 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 // ── Constants ──────────────────────────────────────────────────────
 
 const EXPECTED_TOOLS = [
+  // Core tools
   "xentient_read_sensors",
   "xentient_read_mode",
   "xentient_set_mode",
@@ -13,6 +14,23 @@ const EXPECTED_TOOLS = [
   "xentient_set_lcd",
   "xentient_capture_frame",
   "xentient_mqtt_publish",
+  // Skill management tools
+  "xentient_register_skill",
+  "xentient_update_skill",
+  "xentient_disable_skill",
+  "xentient_remove_skill",
+  "xentient_list_skills",
+  "xentient_get_skill_log",
+  "xentient_switch_mode",
+  "xentient_resolve_conflict",
+  // Event bridge tools
+  "xentient_register_event_mapping",
+  "xentient_remove_event_mapping",
+  "xentient_list_event_mappings",
+  // Pack management tools
+  "xentient_load_pack",
+  "xentient_list_packs",
+  "xentient_reload_pack",
 ] as const;
 
 const VALID_MODES = ["sleep", "listen", "active", "record"] as const;
@@ -89,7 +107,7 @@ describe.skipIf(skipSuite)("MCP integration smoke test", () => {
     expect(connected).toBe(true);
   });
 
-  it("should expose all 7 MCP tools", async () => {
+  it("should expose all 21 MCP tools", async () => {
     if (!connected) return;
 
     const { tools } = await client!.listTools();

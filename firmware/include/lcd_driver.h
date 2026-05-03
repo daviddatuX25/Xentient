@@ -20,3 +20,8 @@ void lcd_init();
 // Update row 1 with the label for state s.
 // No-op if s matches the previously displayed state (prevents flicker).
 void lcd_set_state(NodeState s);
+
+// Write arbitrary text to both LCD rows (16 chars max each).
+// Clears any previous state tracking — next lcd_set_state call will always write.
+// Used for display_update messages from harness with custom face text.
+void lcd_display_face(const char* line1, const char* line2);

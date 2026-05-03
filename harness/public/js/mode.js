@@ -31,8 +31,7 @@ const DEFAULT_TRANSITIONS = {
   record: ['listen', 'sleep'],
 };
 
-// Behavioral modes for Skill Profile selector (v1 hardcoded)
-const BEHAVIORAL_MODES = ['default', 'student', 'teacher'];
+// Skill profiles are derived from available packs, not hardcoded modes
 
 // Peripheral definitions for hardware status
 const PERIPHERALS = [
@@ -179,39 +178,57 @@ async function attemptModeTransition(targetMode) {
 /**
  * Render the Skill Profile dropdown.
  * Visually distinct from Hardware Mode — neutral gray, no color coding.
+ * Loads available packs from the server and uses loadPack() to switch profiles.
  * @param {HTMLElement} container - Element to render into
- * @param {string} currentMode - Current behavioral mode
+ * @param {string} activePack - Currently loaded pack name
  * @param {object} api - DashboardAPI instance
  */
-function renderBehavioralModeSelector(container, currentMode, api) {
-  const selected = currentMode || 'default';
+function renderBehavioralModeSelector(container, activePack, api) {
+  const selected = activePack || 'default';
 
-  container.innerHTML = `
-    <section class="skill-profile-card">
-      <h3 class="section-title">Skill Profile</h3>
-      <select id="behavioral-mode" class="mode-select">
-        ${BEHAVIORAL_MODES.map(m =>
-          `<option value="${m}" ${m === selected ? 'selected' : ''}>${m.charAt(0).toUpperCase() + m.slice(1)}</option>`
-        ).join('')}
-      </select>
-      <p class="hint">Changes which skills are active based on modeFilter</p>
-    </section>
-  `;
+  // Fetch available packs and render dropdown
+  api.getPacks().then(({ available, loaded }) => {
+    const packs = available?.length ? available : [selected];
+    const currentLoaded = loaded || selected;
 
-  const selectEl = document.getElementById('behavioral-mode');
-  if (selectEl) {
-    selectEl.addEventListener('change', async (e) => {
-      const mode = e.target.value;
-      try {
-        await api.setSpaceMode('default', mode);
-        showToast(`Skill profile changed to ${mode}`, 'success');
-      } catch (err) {
-        showToast(`Error switching profile: ${err.message}`, 'error');
-        // Revert select
-        e.target.value = selected;
-      }
-    });
-  }
+    container.innerHTML = `
+      <section class="skill-profile-card">
+        <h3 class="section-title">Skill Profile</h3>
+        <select id="behavioral-mode" class="mode-select">
+          ${packs.map(p =>
+            `<option value="${p}" ${p === currentLoaded ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
+          ).join('')}
+        </select>
+        <p class="hint">Changes which skills are active based on modeFilter</p>
+      </section>
+    `;
+
+    const selectEl = document.getElementById('behavioral-mode');
+    if (selectEl) {
+      selectEl.addEventListener('change', async (e) => {
+        const packName = e.target.value;
+        try {
+          await api.loadPack(packName);
+          showToast(`Skill profile changed to ${packName}`, 'success');
+        } catch (err) {
+          showToast(`Error switching profile: ${err.message}`, 'error');
+          // Revert select
+          e.target.value = currentLoaded;
+        }
+      });
+    }
+  }).catch(() => {
+    // Fallback: render with default pack only
+    container.innerHTML = `
+      <section class="skill-profile-card">
+        <h3 class="section-title">Skill Profile</h3>
+        <select id="behavioral-mode" class="mode-select" disabled>
+          <option value="default" selected>Default</option>
+        </select>
+        <p class="hint">Could not load pack list</p>
+      </section>
+    `;
+  });
 }
 
 // ─── Space Info Card ───────────────────────────────────────────────
@@ -322,7 +339,7 @@ export function renderMode(container, state, api, sse) {
 
   renderBehavioralModeSelector(
     document.getElementById('behavioral-mode-container'),
-    state.config?.behavioralMode || 'default',
+    state.activePack || 'default',
     api
   );
 

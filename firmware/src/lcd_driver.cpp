@@ -44,3 +44,16 @@ void lcd_set_state(NodeState s) {
     while (label[len]) { lcd.print(label[len++]); }
     while (len++ < 16) { lcd.print(' '); }
 }
+
+static void lcd_write_row(uint8_t row, const char* text) {
+    lcd.setCursor(0, row);
+    uint8_t len = 0;
+    while (len < 16 && text[len]) { lcd.print(text[len++]); }
+    while (len++ < 16) { lcd.print(' '); }
+}
+
+void lcd_display_face(const char* line1, const char* line2) {
+    lastState = static_cast<NodeState>(0xFF);  // invalidate — next lcd_set_state will always write
+    lcd_write_row(0, line1);
+    lcd_write_row(1, line2);
+}

@@ -3,7 +3,7 @@ import pino from "pino";
 
 const logger = pino({ name: "port-fallback" }, process.stderr);
 
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = parseInt(process.env.PORT_FALLBACK_RANGE ?? "20", 10);
 
 /**
  * Bind an existing server (http.Server or net.Server) to a port with auto-fallback.
@@ -21,7 +21,7 @@ export function listenWithFallback(server: Server, preferredPort: number, label:
           logger.warn({ port, label }, "Port in use — trying next port");
           tryPort(attempt + 1);
         } else if (err.code === "EADDRINUSE") {
-          reject(new Error(`${label}: ports ${preferredPort}-${port} all in use — is another instance running?`));
+          reject(new Error(`${label}: ports ${preferredPort}-${port} all in use (tried ${attempt + 1} ports) — set WS_PORT/CAMERA_WS_PORT/CONTROL_PORT to an available port, or stop other instances`));
         } else {
           reject(err);
         }

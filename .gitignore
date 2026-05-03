@@ -20,4 +20,17 @@ firmware/shared/secrets.h
 
 # IDE
 .vscode/
-.idea/
+.idea/.claude/worktrees/
+node_modules/
+
+# Build artifacts
+harness/tsconfig.tsbuildinfo
+
+# Claude local settings
+.claude/settings.local.json
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
+*.db-journal
+harness/data/

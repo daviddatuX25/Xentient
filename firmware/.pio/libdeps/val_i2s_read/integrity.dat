@@ -1,0 +1,6 @@
+links2004/WebSockets @ ^2.3.6
+adafruit/Adafruit Unified Sensor @ ^1.1.0
+marcoschwartz/LiquidCrystal_I2C @ ^1.1.4
+adafruit/Adafruit BME280 Library @ ^2.2.0
+knolleary/PubSubClient @ ^2.8
+bblanchon/ArduinoJson @ ^7.0.0

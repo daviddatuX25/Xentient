@@ -208,8 +208,10 @@ void loop() {
         send_uart_chunk(fid, i, chunk_total, fb->buf + offset, chunk_len);
         offset += chunk_len;
 
-        // Small delay between chunks to avoid UART TX buffer overflow
-        delay(1);
+        // Delay between chunks so receiver can drain its 2KB RX buffer
+        // 30ms gives Node Base enough time to process each chunk
+        // despite WiFi/MQTT/WS interrupts stealing CPU cycles
+        delay(30);
     }
 
     frames_sent++;
