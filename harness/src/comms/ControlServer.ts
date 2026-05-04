@@ -15,6 +15,7 @@ import type { CoreSkill, SensorCache } from "../shared/types";
 import type { NodeProvisioner } from "./NodeProvisioner";
 import { MODE_TRANSITIONS, PERIPHERAL_IDS, CreateSkillApiSchema } from "../shared/contracts";
 import type { EventMapping } from "./EventBridge";
+import type { McpSseServer } from "../mcp/server";
 import pino from "pino";
 
 const logger = pino({ name: "control-server" }, process.stderr); // GAP-11/T-22: stderr for MCP stdio safety
@@ -63,6 +64,7 @@ export interface ControlServerDeps {
   skillLog: SkillLog;
   getBrainConnected: () => boolean;
   nodeProvisioner?: NodeProvisioner;
+  mcpSse?: McpSseServer;
 }
 
 
@@ -206,6 +208,12 @@ export class ControlServer extends EventEmitter {
       return;
     }
 
+    // 3b. MCP SSE endpoint — brain processes connect here
+    if (url.split("?")[0] === "/mcp" && this.deps.mcpSse) {
+      this.deps.mcpSse.connectClient(req, res);
+      return;
+    }
+
     // 4. API routes — resolve through MicroRouter
     const result = this.router.resolve(method, url);
     if ("handler" in result) {
@@ -253,12 +261,33 @@ export class ControlServer extends EventEmitter {
   // ── Route Handlers ──────────────────────────────────────────────────
 
   private async handleGetStatus(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
+    const manifest = this.deps.packLoader.getLoadedPackManifest();
     this.sendJSON(res, 200, {
       mode: this.deps.modeManager.getMode(),
       mqtt: this.deps.mqtt.connected,
       camera: this.deps.cameraServer.getStats(),
       sensors: this.deps.sensorCache,
+      brain: this.deps.getBrainConnected(),
+      activePack: this.deps.packLoader.getLoadedPack(),
+      activeConfig: this.deps.spaceManager?.getSpace('default')?.activeConfig ?? null,
+      nodeFunctions: ControlServer.deriveNodeFunctions(manifest),
     });
+  }
+
+  /** Derive which node functions (hardware peripherals) are active from the loaded pack manifest. */
+  static deriveNodeFunctions(manifest: { nodeSkills?: { requires?: { camera?: boolean; mic?: boolean; bme?: boolean; pir?: boolean } }[]; skills?: { actions?: Record<string, unknown>[] }[] } | null): { core: boolean; cam: boolean; mic: boolean; speaker: boolean; tempHumid: boolean; pir: boolean } {
+    if (!manifest) {
+      return { core: true, cam: false, mic: false, speaker: false, tempHumid: false, pir: false };
+    }
+    const ns = manifest.nodeSkills?.[0];
+    return {
+      core: true,
+      cam: ns?.requires?.camera === true,
+      mic: ns?.requires?.mic === true,
+      speaker: manifest.skills?.some(s => s.actions?.some((a: Record<string, unknown>) => a.type === 'play_chime')) ?? false,
+      tempHumid: ns?.requires?.bme === true,
+      pir: ns?.requires?.pir === true,
+    };
   }
 
   private async handleGetSensors(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
@@ -501,15 +530,23 @@ export class ControlServer extends EventEmitter {
   // ── Space Endpoints ──────────────────────────────────────────────────
 
   private async handleListSpaces(_req: IncomingMessage, res: ServerResponse, _params: Record<string, string>): Promise<void> {
-    const skills = this.deps.spaceManager.listSkills();
-    // Deduplicate space IDs from skills
-    const spaceIds = [...new Set(skills.map(s => s.spaceId))];
-    const spaces = spaceIds.map(id => ({
-      id,
-      mode: this.deps.modeManager.getMode(),
-      skillCount: skills.filter(s => s.spaceId === id || s.spaceId === '*').length,
-    }));
-    this.sendJSON(res, 200, spaces);
+    const space = this.deps.spaceManager.getSpace('default');
+    const manifest = this.deps.packLoader.getLoadedPackManifest();
+    const config = manifest?.configurations.find(c => c.name === space?.activeConfig);
+    const nodeSkill = manifest?.nodeSkills.find(ns => ns.id === config?.nodeAssignments?.['base']);
+
+    this.sendJSON(res, 200, [{
+      id: space?.id ?? 'default',
+      activeConfig: space?.activeConfig ?? null,
+      activePack: space?.activePack ?? null,
+      availableConfigs: manifest?.configurations.map(c => c.name) ?? [],
+      nodes: space?.nodes ?? [],
+      nodeSkill: nodeSkill ? {
+        id: nodeSkill.id,
+        requires: nodeSkill.requires,
+        emits: nodeSkill.emits,
+      } : null,
+    }]);
   }
 
   private async handleActivateConfig(req: IncomingMessage, res: ServerResponse, params: Record<string, string>): Promise<void> {

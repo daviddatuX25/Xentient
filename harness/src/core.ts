@@ -16,8 +16,10 @@ import { PackLoader } from "./engine/PackLoader";
 import { SensorHistory } from "./engine/SensorHistory";
 import { MotionHistory } from "./engine/MotionHistory";
 import { ModeHistory } from "./engine/ModeHistory";
-import { startMcpServer } from "./mcp/server";
+import { startMcpServer, createMcpSseServer } from "./mcp/server";
 import { EventSubscriptionManager } from "./engine/EventSubscriptionManager";
+import { EscalationSupervisor } from "./engine/EscalationSupervisor";
+import { CHIME_PCM } from "./engine/chime";
 import { NodeProvisioner } from "./comms/NodeProvisioner";
 import type { SensorCache, Space } from "./shared/types";
 import { MCP_EVENTS, PROTOCOL_VERSION, PERIPHERAL_IDS } from "./shared/contracts";
@@ -92,6 +94,13 @@ async function main() {
 
   // Wire spaceManager into MCP deps (createToolHandlers captures deps by reference)
   mcpDeps.spaceManager = spaceManager;
+
+  // --- EscalationSupervisor: timeout-based escalation with chime fallback ---
+  const supervisor = new EscalationSupervisor();
+  spaceManager.setEscalation(supervisor, () => {
+    // Fallback: play chime when escalation times out without Brain response
+    audioServer.sendAudio(CHIME_PCM);
+  });
 
   // --- NodeProvisioner: dynamic node registration (S5, S9, S11) ---
   const nodeProvisioner = new NodeProvisioner(
@@ -264,6 +273,9 @@ async function main() {
     }
   });
 
+  // --- MCP SSE server: brain processes connect over HTTP/SSE ---
+  const mcpSse = createMcpSseServer(mcpDeps as any);
+
   // Control server - HTTP API + static files + SSE for browser test page
   const controlPort = parseInt(process.env.CONTROL_PORT ?? "3000", 10);
   const controlServer = new ControlServer(
@@ -279,8 +291,9 @@ async function main() {
       eventBridge,
       packLoader,
       skillLog: spaceManager.skillLog,
-      getBrainConnected: () => true, // v1: stdio transport always connected
+      getBrainConnected: () => mcpSse.sseBrainTracker.size > 0,
       nodeProvisioner,
+      mcpSse,
     },
     controlPort,
   );
@@ -342,7 +355,12 @@ async function main() {
 
   // Pack lifecycle events (new in 08-02)
   packLoader.on('pack_loaded', (data: { packName: string; skillCount: number }) => {
-    controlServer.broadcastSSE({ type: 'pack_loaded', ...data });
+    const manifest = packLoader.getLoadedPackManifest();
+    controlServer.broadcastSSE({
+      type: 'pack_loaded',
+      ...data,
+      nodeFunctions: ControlServer.deriveNodeFunctions(manifest),
+    });
   });
   packLoader.on('pack_unloaded', (data: { packName: string }) => {
     controlServer.broadcastSSE({ type: 'pack_unloaded', ...data });
