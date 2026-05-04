@@ -372,6 +372,7 @@ export const BUILTIN_SKILL_IDS = [
   '_pir-wake',
   '_sensor-telemetry',
   '_determine-skill',
+  '_voice-capture',
 ] as const;
 
 export type BuiltinSkillId = typeof BUILTIN_SKILL_IDS[number];
@@ -413,8 +414,8 @@ const PackSkillSchema = z.object({
 const ConfigurationSchema = z.object({
   name: z.string().min(1),
   displayName: z.string().min(1),
-  nodeAssignments: z.record(z.string()),
-  coreSkills: z.array(z.string()),
+  nodeAssignments: z.record(z.string()).default({}),
+  coreSkills: z.array(z.string()).default([]),
   brainSkills: z.array(z.string()).optional(),
 });
 
@@ -422,14 +423,14 @@ const ConfigurationSchema = z.object({
 const NodeSkillSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  version: z.string().min(1),
+  version: z.string().min(1).default('1.0.0'),
   requires: z.object({
     pir: z.boolean().optional(),
     mic: z.boolean().optional(),
     bme: z.boolean().optional(),
     camera: z.boolean().optional(),
     lcd: z.boolean().optional(),
-  }),
+  }).default({}),
   sampling: z.object({
     audioRate: z.number().optional(),
     audioChunkMs: z.number().optional(),
@@ -438,17 +439,17 @@ const NodeSkillSchema = z.object({
     micMode: z.number().optional(),
     cameraMode: z.number().optional(),
     vadThreshold: z.number().optional(),
-  }),
-  emits: z.array(z.string()),
-  expectedBy: z.string(),
-  compatibleConfigs: z.array(z.string()),
+  }).default({}),
+  emits: z.array(z.string()).default([]),
+  expectedBy: z.string().optional(),
+  compatibleConfigs: z.array(z.string()).default([]),
 });
 
 export const PackSkillManifestSchema = z.object({
   pack: PackMetaSchema,
-  configurations: z.array(ConfigurationSchema),
-  nodeSkills: z.array(NodeSkillSchema),
-  skills: z.array(PackSkillSchema),
+  configurations: z.array(ConfigurationSchema).default([]),
+  nodeSkills: z.array(NodeSkillSchema).default([]),
+  skills: z.array(PackSkillSchema).default([]),
 });
 
 // ── API Skill Creation Schema ─────────────────────────────────────────
