@@ -215,13 +215,13 @@ export class SpaceManager extends EventEmitter {
 
   /** @deprecated Use activateConfig instead — kept for ModeManager bridge compat */
   updateSpaceMode(spaceId: string, mode: string): void {
-    // Sync the first node's state with the mode transition
+    // Track the current mode for observability, but do NOT overwrite activeConfig.
+    // activeConfig is a pack configuration name (e.g. "default", "ambient", "voice-ready").
+    // mode is an operational state (e.g. "sleep", "listen", "active", "record").
+    // They are separate concepts and must not be conflated.
     const space = this.spaces.get(spaceId);
     if (!space) return;
-    const prev = space.activeConfig;
-    if (prev === mode) return;
-    space.activeConfig = mode;
-    this.emit('spaceModeChanged', { spaceId, from: prev, to: mode });
+    this.emit('spaceModeChanged', { spaceId, from: space.activeConfig, to: mode });
   }
 
   /**
@@ -266,7 +266,7 @@ export class SpaceManager extends EventEmitter {
           if (profile) {
             this.mqttClient.publish(
               `xentient/node/${node.nodeId}/profile/set`,
-              { v: 1, type: 'node_profile_set', ...profile },
+              this.mapToFirmwareProfile(profile),
             );
             node.state = 'running';
             // Register ack timeout for this node
@@ -321,9 +321,24 @@ export class SpaceManager extends EventEmitter {
   private pushDefaultProfile(node: { nodeId: string }): void {
     this.mqttClient.publish(
       `xentient/node/${node.nodeId}/profile/set`,
-      { v: 1, type: 'node_profile_set', ...DEFAULT_NODE_PROFILE },
+      this.mapToFirmwareProfile(DEFAULT_NODE_PROFILE),
     );
     logger.info({ nodeId: node.nodeId }, 'Default NodeProfile pushed');
+  }
+
+  /** Compatibility mapper: Node.js uses camelCase, C++ firmware expects snake_case */
+  private mapToFirmwareProfile(profile: NodeProfile): Record<string, unknown> {
+    return {
+      v: 1, type: 'node_profile_set',
+      ...profile,
+      profile_id: profile.profileId,
+      pir_interval_ms: profile.pirIntervalMs,
+      mic_mode: profile.micMode,
+      bme_interval_ms: profile.bmeIntervalMs,
+      camera_mode: profile.cameraMode,
+      lcd_face: profile.lcdFace,
+      event_mask: profile.eventMask,
+    };
   }
 
   /**
@@ -365,10 +380,20 @@ export class SpaceManager extends EventEmitter {
     }
     this.mqttClient.publish(
       `xentient/node/${node.nodeId}/profile/set`,
-      { v: 1, type: 'node_profile_set', ...profile },
+      this.mapToFirmwareProfile(profile),
     );
     logger.info({ nodeId: node.nodeId, configName, profileId: nodeSkill.id }, 'Config-specific NodeProfile pushed');
     return true;
+  }
+
+  /** Push active NodeProfile to all nodes in all spaces. Call after pack load at startup. */
+  pushProfilesAfterPackLoad(): void {
+    for (const [spaceId, space] of this.spaces) {
+      for (const node of space.nodes) {
+        this.pushProfileForActiveConfig(node, spaceId);
+      }
+    }
+    logger.info({ spaceCount: this.spaces.size }, 'NodeProfiles pushed for all spaces after pack load');
   }
 
   /**
@@ -438,16 +463,12 @@ export class SpaceManager extends EventEmitter {
           logger.warn({ nodeId, nodeStatus: node.status }, 'Birth from unregistered node — ignoring');
           break;
         }
-        if (spaceId && sid !== spaceId) {
-          logger.warn({ nodeId, expectedSpace: sid, claimedSpace: spaceId }, 'Birth spaceId mismatch — ignoring');
-          break;
-        }
-        if (node.state === 'dormant') {
-          node.state = 'running';
-          node.lastSeen = Date.now();
-          logger.info({ nodeId }, 'Node birth received — transitioning to running');
-          this.pushProfileForActiveConfig(node, sid);
-        }
+        // NOTE: spaceId mismatch guard removed — ESP32 NVS spaceId may differ from harness space id.
+        // Always push profile on birth — the node just rebooted so firmware state is reset to DEFAULT.
+        node.state = 'running';
+        node.lastSeen = Date.now();
+        logger.info({ nodeId, claimedSpace: spaceId, harnessSpace: sid }, 'Node birth received — pushing active profile');
+        this.pushProfileForActiveConfig(node, sid);
         break;
       }
     }
@@ -487,8 +508,17 @@ export class SpaceManager extends EventEmitter {
 
   /** Called when MQTT reconnects — replay active configurations */
   onMqttReconnect(): void {
-    logger.info('MQTT reconnected — replaying active configurations');
+    logger.info('MQTT reconnected — pushing profiles to all known nodes');
     for (const [spaceId, space] of this.spaces) {
+      // Push profile to every active/running node, regardless of activeConfig.
+      // This handles: harness restarts after ESP32, MQTT broker restarts, etc.
+      for (const node of space.nodes) {
+        if (node.status === 'active' || node.state === 'running') {
+          logger.info({ nodeId: node.nodeId, spaceId }, 'Reconnect — pushing profile to node');
+          this.pushProfileForActiveConfig(node, spaceId);
+        }
+      }
+      // Also replay non-default configs via the transition queue
       if (space.activeConfig && space.activeConfig !== 'default') {
         this.transitionQueue.enqueue({
           type: 'activate_config',

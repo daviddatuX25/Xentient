@@ -6,6 +6,12 @@
   },
   "configurations": [
     {
+      "name": "default",
+      "displayName": "Default (Ambient)",
+      "nodeAssignments": { "base": "ambient-sense" },
+      "coreSkills": ["env-logger", "motion-alert"]
+    },
+    {
       "name": "ambient",
       "displayName": "Ambient Sense",
       "nodeAssignments": { "base": "ambient-sense" },
@@ -25,7 +31,7 @@
       "version": "1.0.0",
       "requires": { "pir": true, "bme": true, "lcd": true },
       "sampling": { "bmeIntervalMs": 5000, "pirDebounceMs": 1000, "micMode": 0, "cameraMode": 0 },
-      "emits": ["presence", "env"],
+      "emits": ["presence", "motion", "env"],
       "expectedBy": "_sensor-telemetry",
       "compatibleConfigs": ["ambient"]
     },

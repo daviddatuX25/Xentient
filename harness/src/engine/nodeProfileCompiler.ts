@@ -48,5 +48,6 @@ export const DEFAULT_NODE_PROFILE: NodeProfile = {
   bmeIntervalMs: 5000,
   cameraMode: 0,
   lcdFace: 0,
-  eventMask: EVENT_MASK_BITS.PRESENCE,
+  // Enable PRESENCE | MOTION | ENV so BME280 reports on boot without needing profile swap
+  eventMask: EVENT_MASK_BITS.PRESENCE | EVENT_MASK_BITS.MOTION | EVENT_MASK_BITS.ENV,
 };

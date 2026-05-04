@@ -1,7 +1,45 @@
-# Xentient Dashboard — Frontend Execution Plan
-**Ground-truth locked from codebase audit**  
-**Stack:** Vanilla ES modules, raw Node http.Server, one CSS file, no build step  
-**Philosophy:** Industrial intelligence. A room that thinks — the UI should feel like mission control for a living space, not a SaaS app.
+# Xentient Dashboard — Frontend Execution Plan (FINAL LOCKED)
+**Stack:** Vanilla ES modules, raw Node http.Server, no build step  
+**Aesthetic:** "Deep Instrument" — flight deck for a living space  
+**Last feature locked:** Live Audio Stream passthrough from ESP32 → Dashboard
+
+---
+
+## Pre-Work Checkpoints (Developer Must Verify Before Starting)
+
+These two unknowns must be resolved in the first 10 minutes. Everything else can proceed in parallel.
+
+### CHECKPOINT 1 — AudioServer chunk emission
+**Check `harness/src/comms/AudioServer.ts`:**
+```bash
+grep -n "emit\|EventEmitter\|on('audio\|chunk\|audioChunk\|this.emit" harness/src/comms/AudioServer.ts
+```
+
+**If AudioServer extends EventEmitter and already emits chunks:**
+→ Wire directly: `audioServer.on('audioChunk', handler)` in core.ts. Done.
+
+**If AudioServer does NOT emit chunks (processes internally only):**
+→ Add ONE line to AudioServer.ts where it processes the incoming WS binary frame:
+```ts
+// In the ws.on('message') handler, after existing processing:
+this.emit('audioChunk', data); // data = raw Buffer from ESP32
+```
+→ Make AudioServer extend EventEmitter if it doesn't already.  
+→ This is a 2-line change. Does NOT touch Worker B's files if done carefully.
+
+### CHECKPOINT 2 — WebSocket upgrade on ControlServer's http.Server
+**Check `harness/src/comms/ControlServer.ts`:**
+```bash
+grep -n "upgrade\|WebSocket\|wss\|ws\b" harness/src/comms/ControlServer.ts
+```
+
+**If ControlServer's http.Server has NO WebSocket handling:**
+→ Add `WebSocketServer` from the `ws` package (already installed — AudioServer uses it).  
+→ Attach via `server.on('upgrade', ...)` — standard pattern, no port conflict.  
+→ AudioServer on :8081 is completely separate. ControlServer is on :3000. No conflict.
+
+**If ControlServer already handles upgrades somehow:**
+→ Add the `/live-audio` path check inside the existing upgrade handler.
 
 ---
 
@@ -620,9 +658,6 @@ document.getElementById('brain-feed-body')?.addEventListener('scroll', (e) => {
   brainScrollLocked = atBottom;
   document.getElementById('brain-scroll-nudge')?.classList.toggle('visible', !atBottom);
 });
-```
-
----
 
 ### `harness/public/js/mode.js` → rename conceptually to `space.js`
 
@@ -691,32 +726,279 @@ export function updateConnIndicator(id, state) {
 
 ---
 
-## Things NOT in the Original Aesthetic Plan (Add These)
+## Feature: Live Audio Stream
 
-| Gap | Fix |
-|-----|-----|
-| `brain` dot was always `true` (hardcoded) | Now uses 3-state: online/pending/offline. Pending = Core up, no brain yet |
-| Mode badge removal breaks `mode_status` SSE handler | Keep `state.mode` internally, just remove visible badge. Telemetry timeline can still log mode changes |
-| `backdrop-filter` on every live-updating card is a perf risk | Apply blur only to `.card` not `.brain-feed-body`. Add `--card-blur: 0px` fallback via `prefers-reduced-motion` |
-| Brain Feed scroll hijack | Scroll-lock boolean + "↓ New activity" nudge implemented above |
-| `data-tab="mode"` in nav → needs to become `data-tab="space"` | Update nav button label AND the `switch` in `main.js` that routes to `renderMode()` → `renderSpace()` |
-| No `activateConfig()` function exists yet | Stub it: `POST /api/spaces/default/config` — Worker C adds this endpoint |
-| `currentTokenBlock` listener timing | The `addEventListener('scroll', ...)` in `appendBrainFeedEvent` fires before the element exists if called before tab renders — move scroll listener setup into the tab render function |
+### What it does
+Browser opens a WebSocket to `ws://localhost:3000/live-audio`. ControlServer taps AudioServer's incoming ESP32 chunks and rebroadcasts them. Browser decodes Int16 PCM → Float32 → Web Audio API scheduled playback. Result: developer hears the room mic live from the dashboard.
+
+### Backend — `harness/src/comms/ControlServer.ts`
+
+Add to `ControlServerDeps`:
+```ts
+audioServer: { on: (event: string, handler: (chunk: Buffer) => void) => void };
+```
+
+Add inside `start()` after `this.server.listen(...)`:
+```ts
+import { WebSocketServer, WebSocket } from 'ws';
+
+const wssAudio = new WebSocketServer({ noServer: true });
+const audioClients = new Set<WebSocket>();
+
+// Route /live-audio upgrades
+this.server.on('upgrade', (req, socket, head) => {
+  if (req.url === '/live-audio') {
+    wssAudio.handleUpgrade(req, socket, head, (ws) => {
+      audioClients.add(ws);
+      ws.on('close', () => audioClients.delete(ws));
+    });
+  }
+  // All other upgrades: destroy (or handle /mcp here too if Worker B adds it)
+});
+
+// Tap AudioServer chunks — only broadcast if anyone is listening
+this.deps.audioServer.on('audioChunk', (chunk: Buffer) => {
+  if (audioClients.size === 0) return; // zero-cost when no dashboard listener
+  audioClients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) client.send(chunk);
+  });
+});
+```
+
+**Wire in `core.ts`** — add `audioServer` to the ControlServer deps object:
+```ts
+const controlServer = new ControlServer({
+  // ...existing deps...
+  audioServer: audioServer, // add this line
+});
+```
+
+### Frontend — `harness/public/js/audio.js` (new file)
+
+```js
+// audio.js — Live ESP32 mic passthrough
+// Int16 PCM at 16kHz → Web Audio API scheduled playback
+
+let audioCtx = null;
+let gainNode = null;
+let ws = null;
+let nextStartTime = 0;
+let isStreaming = false;
+
+export function toggleAudioStream() {
+  isStreaming ? stopStream() : startStream();
+}
+
+function startStream() {
+  const btn = document.getElementById('btn-audio-stream');
+  const vol = document.getElementById('audio-volume');
+
+  // MUST happen inside user gesture — browser autoplay policy
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+  // Resume in case browser suspended context (common on reload)
+  audioCtx.resume();
+
+  // Gain node for volume control
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = vol ? parseFloat(vol.value) : 1.0;
+  gainNode.connect(audioCtx.destination);
+
+  // 200ms jitter buffer — prevents buffer underrun clicks on first chunk
+  nextStartTime = audioCtx.currentTime + 0.2;
+
+  const wsUrl = `ws://${window.location.hostname}:3000/live-audio`;
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    isStreaming = true;
+    if (btn) btn.textContent = '■ Stop Listening';
+    if (btn) btn.classList.add('btn-active');
+  };
+
+  ws.onmessage = (event) => {
+    if (!audioCtx || audioCtx.state === 'closed') return;
+
+    // Int16 LE (ESP32) → Float32 (Web Audio)
+    const pcm16 = new Int16Array(event.data);
+    const buffer = audioCtx.createBuffer(1, pcm16.length, 16000);
+    const f32 = buffer.getChannelData(0);
+    for (let i = 0; i < pcm16.length; i++) {
+      f32[i] = pcm16[i] / 32768.0;
+    }
+
+    // Scheduling: prevent drift if we fall behind
+    if (nextStartTime < audioCtx.currentTime) {
+      nextStartTime = audioCtx.currentTime + 0.05;
+    }
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(gainNode);
+    source.start(nextStartTime);
+    nextStartTime += buffer.duration;
+  };
+
+  ws.onerror = () => stopStream();
+  ws.onclose = () => {
+    if (isStreaming) stopStream(); // unexpected close
+  };
+}
+
+function stopStream() {
+  isStreaming = false;
+  if (ws) { ws.close(); ws = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  gainNode = null;
+  nextStartTime = 0;
+
+  const btn = document.getElementById('btn-audio-stream');
+  if (btn) { btn.textContent = '▶ Listen to Node'; btn.classList.remove('btn-active'); }
+}
+
+export function setVolume(val) {
+  if (gainNode) gainNode.gain.value = parseFloat(val);
+}
+
+// Expose for onclick handlers in overview.js template strings
+window.toggleAudioStream = toggleAudioStream;
+window.setAudioVolume = setVolume;
+```
+
+### Frontend — Audio card in `overview.js`
+
+Add to the Overview tab render, after Brain Feed card:
+```js
+import { toggleAudioStream, setVolume } from './audio.js';
+
+function renderAudioCard() {
+  return `
+    <div class="card audio-card">
+      <div class="card-header">
+        <span class="card-label">Live Audio</span>
+        <span class="text-dim" style="font-size:10px;font-family:var(--font-data)">
+          ESP32 mic → browser
+        </span>
+      </div>
+      <div class="audio-controls">
+        <button class="btn-action" id="btn-audio-stream" onclick="toggleAudioStream()">
+          ▶ Listen to Node
+        </button>
+        <div class="volume-row">
+          <span class="vol-label">VOL</span>
+          <input
+            type="range"
+            id="audio-volume"
+            min="0" max="2" step="0.05" value="1"
+            class="vol-slider"
+            oninput="setAudioVolume(this.value)"
+          />
+        </div>
+      </div>
+    </div>
+  `;
+}
+```
+
+### CSS additions for audio card — `dashboard.css`
+
+```css
+.audio-card {
+  border-color: rgba(167, 139, 250, 0.12); /* purple tint — distinct from brain feed */
+}
+.audio-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vol-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  width: 24px;
+}
+.vol-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-active);
+  outline: none;
+  cursor: pointer;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-purple);
+  box-shadow: 0 0 6px rgba(167,139,250,0.5);
+  cursor: pointer;
+}
+.btn-action.btn-active {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--accent-red);
+}
+```
 
 ---
 
-## Verification Checklist
+## Complete Overview Tab Card Order
+
+Final render sequence in `renderOverview(state)`:
+1. **System Status card** — Pack badge, Config badge, Node Function pills
+2. **Brain Feed card** — streaming reasoning tokens, pills, scroll-lock
+3. **Live Audio card** — ESP32 mic passthrough, volume slider
+4. **Sensor card** — Temp/Humidity/Pressure gauges, Motion indicator (existing, just restyled)
+5. **Skills Summary card** — fire count totals (existing, just restyled)
+6. **Quick Actions card** — Trigger Pipeline + Reload Pack only (mode buttons deleted)
+
+---
+
+## All Gaps Resolved
+
+| Gap | Resolution |
+|-----|------------|
+| AudioServer emit unknown | CHECKPOINT 1 — check first, add `this.emit('audioChunk', data)` if missing |
+| ControlServer WS upgrade unknown | CHECKPOINT 2 — check first, add `server.on('upgrade', ...)` if missing |
+| Browser autoplay policy | `audioCtx.resume()` called immediately after creation inside click handler |
+| AudioContext suspended on reload | Same `resume()` call handles this |
+| No volume control | `GainNode` + range slider, `setAudioVolume()` wired to `oninput` |
+| Zero-cost when nobody listening | `if (audioClients.size === 0) return` in chunk broadcast handler |
+| Unexpected WS close | `ws.onclose` checks `isStreaming` flag and calls `stopStream()` |
+| Buffer underrun clicks | `nextStartTime` drift correction: resets to `currentTime + 0.05` if behind |
+| Port conflict concern | AudioServer on :8081 is a separate Node WS server. ControlServer on :3000 is a separate http.Server. No conflict. `/live-audio` upgrade attaches to :3000 only. |
+| `audio.js` not imported in main.js | Import at top of `main.js`: `import './audio.js'` — side-effect import to register `window.toggleAudioStream` |
+| `/mcp` WS upgrade (Worker B) collision | Worker B's `/mcp` SSE route uses HTTP response streaming, NOT a WS upgrade. No collision. If Worker B later adds WS for MCP, add path check in the same upgrade handler. |
+
+---
+
+## Full Verification Checklist
 
 | Check | How |
 |-------|-----|
-| Mode badge completely gone | Inspect header — no `SLEEP` text, no `.mode-badge` element |
-| Mode buttons gone from Quick Actions | Overview has only "Trigger Pipeline" + "Reload Pack" |
-| SVG state machine gone from Space tab | No `<svg>` in Space tab DOM |
-| Node function pills glow correctly | Load default pack → CORE always teal, others match manifest |
-| Brain dot shows 3 states | Kill brain process → dot goes amber (pending). Kill core → dot goes grey |
-| Brain Feed streams tokens | Trigger voice → see blue token text stream in real time |
-| Brain Feed scroll-lock works | Scroll up mid-stream → auto-scroll pauses → nudge appears |
-| `escalation_timeout` pill appears | Trigger voice with no brain connected → red "No brain" pill within 8s |
-| Header identity updates | Load pack → header shows `default / voice-ready` |
-| `prefers-reduced-motion` respected | Enable in OS → no blur, no animations |
-| `tsc --noEmit` passes | Run from harness/ — verify no TS errors in ControlServer additions |
+| Mode badge gone | Inspect `<header>` — no SLEEP text |
+| Mode buttons gone | Overview Quick Actions has 2 buttons only |
+| SVG diagram gone | Space tab DOM has no `<svg>` |
+| Node pills glow | Load default pack → CORE teal, others match manifest |
+| Brain dot 3 states | Kill brain → amber. Kill core → grey. |
+| Brain Feed streams | Trigger voice → blue tokens appear |
+| Brain Feed scroll-lock | Scroll up mid-stream → nudge appears, auto-scroll pauses |
+| `escalation_timeout` pill | Trigger voice, no brain → red pill in ≤8s |
+| Header identity | Load pack → shows `default / voice-ready` |
+| Audio stream starts | Click Listen → button goes red, audio plays |
+| Audio volume works | Drag slider → gain changes without reconnecting |
+| Audio stops cleanly | Click Stop → WS closes, AudioContext closed, button resets |
+| Zero-cost idle | AudioServer chunk handler exits immediately when no browser connected |
+| `prefers-reduced-motion` | Enable in OS → no blur, no animations |
+| `tsc --noEmit` passes | Run from `harness/` |
+| `bun test` passes | Run from `harness/` |

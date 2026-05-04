@@ -1,4 +1,0 @@
-.pio/build/node_base/FrameworkArduino/USB.cpp.o: \
- C:/Users/sarmi/.platformio/packages/framework-arduinoespressif32/cores/esp32/USB.cpp \
- C:/Users/sarmi/.platformio/packages/framework-arduinoespressif32/cores/esp32/USB.h \
- C:/Users/sarmi/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/dio_qspi/include/sdkconfig.h

@@ -77,7 +77,7 @@ export class MqttClient extends EventEmitter {
   private handleMessage(topic: string, payload: Buffer): void {
     try {
       const data = JSON.parse(payload.toString());
-      logger.debug({ topic, type: data.type }, 'Message received');
+      logger.info({ topic, type: data.type }, 'MQTT Message received');
 
       if (topic === 'xentient/sensors/env' || topic === 'xentient/sensors/motion') {
         this.emit('sensor', data);

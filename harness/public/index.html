@@ -8,26 +8,34 @@
   <link rel="preconnect" href="/">
   <link rel="preload" href="/fonts/universalSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&family=Departure+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
   <div id="app">
     <header id="header">
       <div class="header-left">
+        <span class="logo-mark">⬡</span>
         <h1 class="logo">Xentient</h1>
+        <span class="system-identity" id="header-pack-config">—</span>
       </div>
       <div class="header-right">
-        <span id="mode-badge" class="mode-badge mode-sleep">SLEEP</span>
-        <span id="mqtt-indicator" class="conn-indicator" title="MQTT">MQTT</span>
-        <span id="camera-indicator" class="conn-indicator" title="Camera">CAM</span>
-        <span id="brain-indicator" class="conn-indicator" title="Brain">BRAIN</span>
+        <div class="conn-dot" id="mqtt-indicator" data-state="offline" title="MQTT">
+          <span class="dot-ring"></span>
+          <span class="dot-label">MQTT</span>
+        </div>
+        <div class="conn-dot" id="brain-indicator" data-state="offline" title="Brain">
+          <span class="dot-ring"></span>
+          <span class="dot-label">BRAIN</span>
+        </div>
       </div>
     </header>
     <nav id="nav">
       <button data-tab="overview" class="tab-btn active">Overview</button>
       <button data-tab="skills" class="tab-btn">Skills</button>
       <button data-tab="telemetry" class="tab-btn">Telemetry</button>
-      <button data-tab="mode" class="tab-btn">Mode</button>
+      <button data-tab="space" class="tab-btn">Space</button>
     </nav>
     <main id="content">
       <!-- Panel content rendered by JS modules -->

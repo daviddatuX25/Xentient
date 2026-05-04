@@ -38,11 +38,11 @@ export class AudioServer extends EventEmitter {
     this.wss.on('connection', (ws, req) => {
       const remoteAddr = req.socket.remoteAddress;
 
-      // WR-001: Reject second connection while one is already active
+      // WR-001: If a new connection comes in, force-close the old (stale) one
+      // This happens if the ESP32 crashes/reboots without sending a TCP FIN
       if (this.activeConnection) {
-        logger.warn({ remoteAddr }, 'Rejecting duplicate WS connection — ESP32 already connected');
-        ws.close(1008, 'Another node is already connected');
-        return;
+        logger.warn({ remoteAddr }, 'Replacing stale WS connection with new connection');
+        try { this.activeConnection.terminate(); } catch (e) {}
       }
 
       logger.info({ remoteAddr }, 'ESP32 audio connection established');

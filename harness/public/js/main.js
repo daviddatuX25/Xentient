@@ -6,11 +6,12 @@
  */
 import { DashboardAPI } from './api.js';
 import { DashboardSSE } from './sse.js';
-import { renderOverview, renderOverviewSkeleton, toggleBrainFeed, appendBrainFeedEvent, renderBrainFeedContent } from './overview.js';
+import { renderOverview, renderOverviewSkeleton, toggleBrainFeed, appendBrainFeedEvent } from './overview.js';
 import { renderSkills, flashSkillRow, refreshSkillList, refreshSkillPack } from './skills.js';
 import { renderTelemetry, handleSensorUpdate, handleSkillFired, handleSkillEscalated, handleSkillConflict, handleModeChange, reseedTelemetryData } from './telemetry.js';
-import { renderMode } from './mode.js';
-import { showToast, updateModeBadge, updateConnIndicator, updatePageTitle, setupGlobalKeyboardShortcuts } from './components.js';
+import { renderSpaceTab } from './space.js';
+import { showToast, updateConnIndicator, updatePageTitle, setupGlobalKeyboardShortcuts } from './components.js';
+import './audio.js';
 
 // ─── State ─────────────────────────────────────────────────────────
 export const state = {
@@ -22,7 +23,8 @@ export const state = {
   skills: [],
   activePack: null,
   activeConfig: null,
-  nodeFunctions: null,
+  nodeFunctions: { core: true, cam: false, mic: false, speaker: false, tempHumid: false, pir: false },
+  brainPending: false,
   brainFeedEvents: [],
   brainFeedExpanded: false,
   currentStreamEscalationId: null,
@@ -32,7 +34,7 @@ export const state = {
 };
 
 // ─── Tab Routing (Expansion 3.6) ──────────────────────────────────
-const TABS = ['overview', 'skills', 'telemetry', 'mode'];
+const TABS = ['overview', 'skills', 'telemetry', 'space'];
 
 function setActiveTab(tab) {
   if (!TABS.includes(tab)) tab = 'overview';
@@ -61,8 +63,8 @@ function renderActivePanel() {
     case 'telemetry':
       renderTelemetry(content, state, api, sse);
       break;
-    case 'mode':
-      renderMode(content, state, api, sse);
+    case 'space':
+      renderSpaceTab(content, state, api, sse);
       break;
     default:
       content.innerHTML = '<div class="panel-placeholder">Unknown panel</div>';
@@ -82,9 +84,8 @@ function onSSEEvent(event) {
       const newMode = event.mode || event.to;
       if (newMode && newMode !== state.mode) {
         state.mode = newMode;
-        updateModeBadge(newMode);
         updatePageTitle(newMode);
-        if (state.activeTab === 'overview' || state.activeTab === 'mode') renderActivePanel();
+        if (state.activeTab === 'overview' || state.activeTab === 'space') renderActivePanel();
       }
       // Update telemetry mode timeline
       if (state.activeTab === 'telemetry') handleModeChange(event);
@@ -97,7 +98,7 @@ function onSSEEvent(event) {
       state.sensors.lastUpdate = Date.now();
       // Update telemetry sparklines if on telemetry tab
       if (state.activeTab === 'telemetry') handleSensorUpdate(event);
-      if (state.activeTab === 'overview' || state.activeTab === 'mode') renderActivePanel();
+      if (state.activeTab === 'overview' || state.activeTab === 'space') renderActivePanel();
       break;
     case 'skill_registered':
     case 'skill_removed':
@@ -118,7 +119,7 @@ function onSSEEvent(event) {
       state.activePack = null;
       state.activeConfig = null;
       state.nodeFunctions = { core: true, cam: false, mic: false, speaker: false, tempHumid: false, pir: false };
-      if (state.activeTab === 'overview') renderActivePanel();
+      if (state.activeTab === 'overview' || state.activeTab === 'space') renderActivePanel();
       if (state.activeTab === 'skills') refreshSkillPack();
       break;
     case 'skill_fired':
@@ -180,10 +181,19 @@ async function refreshState() {
       state.activeConfig = status.activeConfig ?? state.activeConfig;
       state.nodeFunctions = status.nodeFunctions ?? state.nodeFunctions;
       if (status.camera) state.camera = status.camera;
-      updateModeBadge(state.mode);
+      
       updatePageTitle(state.mode);
-      updateConnIndicator('mqtt-indicator', state.mqtt);
-      updateConnIndicator('brain-indicator', state.brain);
+      
+      const identEl = document.getElementById('header-pack-config');
+      if (identEl) {
+        identEl.textContent = state.activePack
+          ? `${state.activePack} / ${state.activeConfig ?? '—'}`
+          : '—';
+      }
+      
+      const brainState = status.brain ? 'online' : (status.mqtt ? 'pending' : 'offline');
+      updateConnIndicator('mqtt-indicator', state.mqtt ? 'online' : 'offline');
+      updateConnIndicator('brain-indicator', brainState);
     }
     if (sensors) {
       Object.assign(state.sensors, sensors);
@@ -255,10 +265,18 @@ async function init() {
     }
 
     // Update header indicators
-    updateModeBadge(state.mode);
     updatePageTitle(state.mode);
-    updateConnIndicator('mqtt-indicator', state.mqtt);
-    updateConnIndicator('brain-indicator', state.brain);
+    
+    const identEl = document.getElementById('header-pack-config');
+    if (identEl) {
+      identEl.textContent = state.activePack
+        ? `${state.activePack} / ${state.activeConfig ?? '—'}`
+        : '—';
+    }
+    
+    const brainState = state.brain ? 'online' : (state.mqtt ? 'pending' : 'offline');
+    updateConnIndicator('mqtt-indicator', state.mqtt ? 'online' : 'offline');
+    updateConnIndicator('brain-indicator', brainState);
 
     // Set initial tab from hash or default
     const hash = window.location.hash.slice(1);

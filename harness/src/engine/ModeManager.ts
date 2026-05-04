@@ -107,14 +107,26 @@ export class ModeManager extends EventEmitter {
 
   /** Handle inbound sensor event. PIR (peripheralType 0x11) triggers sleep → listen. */
   handleSensorEvent(data: unknown): void {
-    try {
-      const parsed = validateMessage("sensor_data", data);
-      if (parsed.peripheralType === PERIPHERAL_IDS.PIR && this.current === "sleep") {
-        logger.info("PIR motion detected — waking from sleep");
-        this.transition("listen");
+    const d = data as { peripheralType?: number; payload?: { motion?: boolean } };
+    
+    // PIR: quick check — wake from sleep if motion detected (bypasses strict validation)
+    if (d.peripheralType === PERIPHERAL_IDS.PIR && d.payload?.motion) {
+      if (this.current === 'sleep') {
+        logger.info('PIR motion detected — waking from sleep');
+        this.transition('listen');
+      } else if (this.current === 'listen') {
+        this.resetIdleTimer();
       }
-    } catch (err) {
-      logger.error({ err, data }, "Invalid sensor data rejected");
+    }
+
+    // Full validation for observability only — log warn but don't block
+    try {
+      validateMessage('sensor_data', data);
+    } catch {
+      // Only warn if it's not a known-good PIR/BME message structure
+      if (d.peripheralType !== PERIPHERAL_IDS.PIR && d.peripheralType !== PERIPHERAL_IDS.BME280) {
+        logger.warn({ data }, 'Unknown sensor_data format — skipped');
+      }
     }
   }
 

@@ -352,9 +352,11 @@ export class SkillExecutor extends EventEmitter {
         this.counters.set(action.name, cur + 1);
         break;
       }
-      case 'log':
-        logger.info({ message: action.message, spaceId: this.opts.spaceId }, 'Skill log action');
+      case 'log': {
+        const resolved = action.message ? this.interpolate(action.message, _triggerData) : '';
+        logger.info({ message: resolved, spaceId: this.opts.spaceId }, 'Skill log action');
         break;
+      }
     }
   }
 
@@ -498,6 +500,22 @@ export class SkillExecutor extends EventEmitter {
       return subTriggers.every(sub => this.evaluateTrigger(sub, { ...ctx, _compositeDepth: depth + 1 }));
     }
     return false;
+  }
+
+  private interpolate(template: string, triggerData: Record<string, unknown>): string {
+    const sensors = this.opts.getSensorSnapshot() as Record<string, unknown>;
+    return template.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => {
+      const parts = key.trim().split('.');
+      if (parts[0] === 'sensor' && parts[1]) {
+        const val = sensors[parts[1]];
+        return val !== null && val !== undefined ? String(val) : '?';
+      }
+      if (parts[0] === 'counter' && parts[1]) {
+        return String(this.counters.get(parts[1]) ?? 0);
+      }
+      if (triggerData[key] !== undefined) return String(triggerData[key]);
+      return `{{${key}}}`; // Return unresolved placeholder as-is
+    });
   }
 
   private resolveConditionField(field: string, triggerData: Record<string, unknown>): number {

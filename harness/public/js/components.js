@@ -21,16 +21,6 @@ const MODE_CLASSES = {
   record: 'mode-record',
 };
 
-export function updateModeBadge(mode) {
-  const badge = document.getElementById('mode-badge');
-  if (!badge) return;
-  // Remove all mode classes
-  Object.values(MODE_CLASSES).forEach(cls => badge.classList.remove(cls));
-  const cls = MODE_CLASSES[mode] || MODE_CLASSES.sleep;
-  badge.classList.add(cls);
-  badge.textContent = MODE_LABELS[mode] || MODE_LABELS.sleep;
-}
-
 export function updatePageTitle(mode) {
   const label = MODE_LABELS[mode] || MODE_LABELS.sleep;
   document.title = `Xentient — ${label.toLowerCase()}`;
@@ -38,10 +28,11 @@ export function updatePageTitle(mode) {
 
 // ─── Connection Indicators ─────────────────────────────────────────
 
-export function updateConnIndicator(elementId, connected) {
+export function updateConnIndicator(elementId, state) {
+  // state: 'online' | 'pending' | 'offline'
   const el = document.getElementById(elementId);
   if (!el) return;
-  el.classList.toggle('connected', Boolean(connected));
+  el.dataset.state = state;
 }
 
 export function updateCameraIndicator(online) {

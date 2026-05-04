@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse } from "http";
 import { readFile, stat, readdir } from "fs/promises";
 import { join, extname, resolve } from "path";
 import { EventEmitter } from "events";
+import { WebSocketServer, WebSocket } from "ws";
 import { MqttClient } from "./MqttClient";
 import { CameraServer } from "./CameraServer";
 import { ModeManager } from "../engine/ModeManager";
@@ -65,6 +66,7 @@ export interface ControlServerDeps {
   getBrainConnected: () => boolean;
   nodeProvisioner?: NodeProvisioner;
   mcpSse?: McpSseServer;
+  audioServer: { on: (event: string, handler: (chunk: Buffer) => void) => void };
 }
 
 
@@ -164,6 +166,27 @@ export class ControlServer extends EventEmitter {
         logger.error({ err, url: req.url }, "Request handler error");
         this.sendJSON(res, 500, { error: "Internal server error" });
       }
+    });
+
+    const wssAudio = new WebSocketServer({ noServer: true });
+    const audioClients = new Set<WebSocket>();
+
+    this.server.on('upgrade', (req, socket, head) => {
+      if (req.url === '/live-audio') {
+        wssAudio.handleUpgrade(req, socket, head, (ws) => {
+          audioClients.add(ws);
+          ws.on('close', () => audioClients.delete(ws));
+        });
+      } else {
+        socket.destroy();
+      }
+    });
+
+    this.deps.audioServer.on('audioChunk', (chunk: Buffer) => {
+      if (audioClients.size === 0) return;
+      audioClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) client.send(chunk);
+      });
     });
 
     this.port = await listenWithFallback(this.server, this.port, 'ControlServer');
@@ -270,16 +293,24 @@ export class ControlServer extends EventEmitter {
       brain: this.deps.getBrainConnected(),
       activePack: this.deps.packLoader.getLoadedPack(),
       activeConfig: this.deps.spaceManager?.getSpace('default')?.activeConfig ?? null,
-      nodeFunctions: ControlServer.deriveNodeFunctions(manifest),
+      nodeFunctions: ControlServer.deriveNodeFunctions(manifest, this.deps.spaceManager?.getSpace('default')?.activeConfig ?? null),
     });
   }
 
   /** Derive which node functions (hardware peripherals) are active from the loaded pack manifest. */
-  static deriveNodeFunctions(manifest: { nodeSkills?: { requires?: { camera?: boolean; mic?: boolean; bme?: boolean; pir?: boolean } }[]; skills?: { actions?: Record<string, unknown>[] }[] } | null): { core: boolean; cam: boolean; mic: boolean; speaker: boolean; tempHumid: boolean; pir: boolean } {
+  static deriveNodeFunctions(manifest: { configurations?: { name: string; nodeAssignments?: Record<string, string> }[]; nodeSkills?: { id: string; requires?: { camera?: boolean; mic?: boolean; bme?: boolean; pir?: boolean } }[]; skills?: { actions?: Record<string, unknown>[] }[] } | null, activeConfig?: string | null): { core: boolean; cam: boolean; mic: boolean; speaker: boolean; tempHumid: boolean; pir: boolean } {
     if (!manifest) {
       return { core: true, cam: false, mic: false, speaker: false, tempHumid: false, pir: false };
     }
-    const ns = manifest.nodeSkills?.[0];
+    
+    let ns;
+    if (activeConfig) {
+      const config = manifest.configurations?.find(c => c.name === activeConfig);
+      const nodeSkillId = config?.nodeAssignments?.['base'];
+      ns = nodeSkillId ? manifest.nodeSkills?.find(n => n.id === nodeSkillId) : undefined;
+    }
+    if (!ns) ns = manifest.nodeSkills?.[0];
+
     return {
       core: true,
       cam: ns?.requires?.camera === true,
@@ -695,10 +726,13 @@ export class ControlServer extends EventEmitter {
   private async serveStatic(_req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = _req.url ?? "/";
     const filePath = url === "/" ? "/index.html" : url;
-    const fullPath = resolve(this.publicDir, filePath);
+    const fullPath = resolve(join(this.publicDir, filePath));
 
     // Security: reject paths outside publicDir (handles .., URL encoding, etc.)
-    if (!fullPath.startsWith(this.publicDir)) {
+    // Normalize both paths for Windows drive-letter casing and separator differences
+    const normPublic = resolve(this.publicDir).toLowerCase();
+    const normFull = fullPath.toLowerCase();
+    if (!normFull.startsWith(normPublic)) {
       this.sendJSON(res, 403, { error: "Forbidden" });
       return;
     }

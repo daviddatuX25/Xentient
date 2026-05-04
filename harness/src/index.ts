@@ -115,9 +115,10 @@ async function main() {
     modeHistory: { query: () => [] },    // Stub — basic mode has no mode history
     spaceManager: { listSkills: () => [], skillLog: { append: () => {}, query: () => [], attachEscalationResponse: () => {} } } as any,
     eventBridge: { start: () => {}, stop: () => {}, listMappings: () => [], addCustomMapping: () => "", removeMapping: () => false, handleMqttEvent: () => {}, forwardModeEvent: () => {}, register: () => {} } as any,
-    packLoader: { loadPack: () => {}, unloadCurrentPack: () => {}, getLoadedPack: () => null, listAvailablePacks: () => [], reload: () => {} } as any,
+    packLoader: { loadPack: () => {}, unloadCurrentPack: () => {}, getLoadedPack: () => null, getLoadedPackManifest: () => null, listAvailablePacks: () => [], reload: () => {} } as any,
     skillLog: { append: () => {}, query: () => [], attachEscalationResponse: () => {} } as any,
     getBrainConnected: () => false,  // Basic mode has no brain connection
+    audioServer,
   };
   const controlServer = new ControlServer(controlServerDeps, controlPort);
   try {

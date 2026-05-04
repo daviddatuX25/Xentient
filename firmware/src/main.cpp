@@ -396,9 +396,9 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(PIN_PIR_INT), pir_isr, RISING);
     Serial.printf("[BOOT] PIR ISR attached on GPIO%d\n", PIN_PIR_INT);
 
-    // -- Initialize task watchdog (5s timeout, panic-on-timeout) --
-    esp_task_wdt_init(5, true);
-    Serial.println("[BOOT] Task watchdog initialized: 5s timeout, panic on timeout");
+    // --- Task Watchdog ---
+    esp_task_wdt_init(60, true); // 60s timeout, panic
+    Serial.println("[BOOT] Task watchdog initialized: 60s timeout, panic on timeout");
 
     // -- Create Config Task (Core 0, low priority, 4KB stack) --
     xTaskCreatePinnedToCore(

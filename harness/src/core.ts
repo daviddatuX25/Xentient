@@ -135,7 +135,13 @@ async function main() {
   // Default Space (single-node v1)
   const defaultSpace: Space = {
     id: 'default',
-    nodes: [{ nodeId: config.nodeId ?? 'node-01', role: 'base', hardware: ['motion', 'temperature', 'humidity', 'audio', 'camera'], state: 'dormant' as const }],
+    nodes: [{
+      nodeId: config.nodeId ?? 'prima-node-01',
+      role: 'base',
+      hardware: ['audio', 'motion', 'temperature', 'humidity', 'camera'],
+      state: 'dormant',
+      status: 'active'
+    }],
     activePack: 'default',
     activeConfig: 'default',
     availableConfigs: ['default'],
@@ -213,9 +219,7 @@ async function main() {
   // so placing it before those components is safe.
   modeManager.on("modeChange", ({ from, to }) => {
     spaceManager.updateSpaceMode('default', to);
-    // Also sync the config name with mode name for backward compatibility
-    spaceManager.activateConfig('default', to);
-    logger.info({ from, to }, 'Mode transition — SpaceMode + activeConfig synced');
+    logger.info({ from, to }, 'Mode transition — SpaceMode synced');
   });
 
   // --- EventBridge: declarative MQTT/Mode → Skill event routing ---
@@ -245,6 +249,7 @@ async function main() {
   if (fs.existsSync(path.join(packsDir, 'default', 'skills.json'))) {
     try {
       packLoader.loadPack('default');
+      spaceManager.pushProfilesAfterPackLoad();
     } catch (err) {
       logger.error({ err }, 'Failed to load default pack — continuing without pack skills');
     }
@@ -294,6 +299,7 @@ async function main() {
       getBrainConnected: () => mcpSse.sseBrainTracker.size > 0,
       nodeProvisioner,
       mcpSse,
+      audioServer,
     },
     controlPort,
   );
@@ -356,10 +362,11 @@ async function main() {
   // Pack lifecycle events (new in 08-02)
   packLoader.on('pack_loaded', (data: { packName: string; skillCount: number }) => {
     const manifest = packLoader.getLoadedPackManifest();
+    const activeConfig = spaceManager.getSpace('default')?.activeConfig ?? null;
     controlServer.broadcastSSE({
       type: 'pack_loaded',
       ...data,
-      nodeFunctions: ControlServer.deriveNodeFunctions(manifest),
+      nodeFunctions: ControlServer.deriveNodeFunctions(manifest, activeConfig),
     });
   });
   packLoader.on('pack_unloaded', (data: { packName: string }) => {

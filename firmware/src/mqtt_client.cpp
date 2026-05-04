@@ -63,7 +63,8 @@ static void mqtt_connect() {
         birthDoc["ts"]       = (uint32_t)(millis() / 1000);
         char birthBuf[128];
         serializeJson(birthDoc, birthBuf, sizeof(birthBuf));
-        mqtt_publish(resolvedTopicBirth, birthBuf, strlen(birthBuf));
+        // Retain=true so harness receives birth even if it (re)connects AFTER firmware
+        client.publish(resolvedTopicBirth, (const uint8_t*)birthBuf, strlen(birthBuf), true);
         Serial.printf("[MQTT] Birth message published for node '%s'\n", runtimeNodeId);
     } else {
         Serial.printf("[MQTT] Connect failed, rc=%d\n", client.state());

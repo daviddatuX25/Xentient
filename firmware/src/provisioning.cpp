@@ -75,21 +75,24 @@ bool provisioning_start_portal(const char* provisioningJson) {
     WiFiManager wm;
     wm.setConfigPortalTimeout(180); // 3 min timeout
 
-    // Standard WiFi params
-    WiFiManagerParameter p_ssid("ssid", "WiFi SSID", "", 33);
-    WiFiManagerParameter p_pass("pass", "WiFi Password", "", 64);
+    // Fetch existing config (or defaults if empty) so fields prepopulate correctly
+    // and we don't accidentally overwrite NVS with hardcoded defaults on AutoConnect.
+    ProvisioningConfig curCfg = provisioning_read_config();
+
+    // Standard WiFi params handled natively by WiFiManager
     // Extended params
-    WiFiManagerParameter p_mqtt("mqtt", "MQTT Broker", MQTT_BROKER_ADDR, 46);
-    WiFiManagerParameter p_mport("mport", "MQTT Port", "1883", 6);
-    WiFiManagerParameter p_node("node", "Node ID", NODE_BASE_ID, 24);
-    WiFiManagerParameter p_space("space", "Space ID", SPACE_ID, 24);
-    WiFiManagerParameter p_wshost("wshost", "WS Host", WS_HARNESS_HOST, 46);
-    WiFiManagerParameter p_wsport("wsport", "WS Port", "8080", 6);
+    WiFiManagerParameter p_mqtt("mqtt", "MQTT Broker", curCfg.mqttHost, 46);
+    char portStr[8]; sprintf(portStr, "%u", curCfg.mqttPort);
+    WiFiManagerParameter p_mport("mport", "MQTT Port", portStr, 6);
+    WiFiManagerParameter p_node("node", "Node ID", curCfg.nodeId, 24);
+    WiFiManagerParameter p_space("space", "Space ID", curCfg.spaceId, 24);
+    WiFiManagerParameter p_wshost("wshost", "WS Host", curCfg.wsHost, 46);
+    char wsPortStr[8]; sprintf(wsPortStr, "%u", curCfg.wsPort);
+    WiFiManagerParameter p_wsport("wsport", "WS Port", wsPortStr, 6);
     // Paste-JSON field
     WiFiManagerParameter p_json("prov_json", "Provisioning JSON (paste from Dashboard)", "", 512);
+    WiFiManagerParameter p_help("<div style='font-size:0.85em; color:#666; margin-top:-10px; margin-bottom:15px;'>&#9432; Optional: Paste the config JSON from the Dashboard here to auto-fill the above settings.</div>");
 
-    wm.addParameter(&p_ssid);
-    wm.addParameter(&p_pass);
     wm.addParameter(&p_mqtt);
     wm.addParameter(&p_mport);
     wm.addParameter(&p_node);
@@ -97,6 +100,7 @@ bool provisioning_start_portal(const char* provisioningJson) {
     wm.addParameter(&p_wshost);
     wm.addParameter(&p_wsport);
     wm.addParameter(&p_json);
+    wm.addParameter(&p_help);
 
     // If provisioningJson provided, pre-parse and set WiFi creds
     // (WiFiManager doesn't support programmatic pre-fill of custom params,
