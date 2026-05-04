@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import type { IncomingMessage, ServerResponse } from "http";
 import { z } from "zod";
 import { createToolHandlers, type McpToolDeps } from "./tools";
 import { wireMcpEvents } from "./events";
@@ -359,4 +361,96 @@ export async function startMcpServer(deps: McpToolDeps): Promise<McpServer> {
   logger.info("MCP server connected via stdio");
 
   return server;
+}
+
+// ============================================================
+// SSE MCP SERVER — second McpServer instance for HTTP/SSE transport
+// Shares tool handlers with stdio server via registerAllTools().
+// One transport per McpServer instance (SDK v1.29.0 constraint).
+// See: XENTIENT-SPRINT-ANCHOR.md "Two McpServer Problem"
+// ============================================================
+
+export interface McpSseServer {
+  sseBrainTracker: Set<SSEServerTransport>;
+  connectClient: (req: IncomingMessage, res: ServerResponse) => void;
+}
+
+export function createMcpSseServer(deps: McpToolDeps): McpSseServer {
+  const server = new McpServer({ name: "xentient-sse", version: "1.0.0" });
+
+  // Register brain-facing tools on the SSE server.
+  // The SSE server is used exclusively by brain processes (brain-basic, hermes).
+  // Brain processes call: xentient_brain_stream, xentient_play_audio, xentient_set_lcd,
+  // xentient_read_sensors, xentient_read_mode, xentient_set_mode, xentient_activate_config,
+  // xentient_get_capabilities, xentient_list_skills, xentient_get_skill_log, xentient_subscribe_events.
+  // We re-use the same handlers object — shared deps closure, no business logic duplication.
+  const h = createToolHandlers(deps);
+
+  server.tool("xentient_brain_stream",
+    "Push brain reasoning tokens and events back to Core SSE bus",
+    { escalation_id: z.string(), subtype: z.string(), payload: z.record(z.unknown()).optional() } as any,
+    async ({ escalation_id, subtype, payload }: { escalation_id: string; subtype: string; payload?: Record<string, unknown> }) =>
+      h.xentient_brain_stream({ escalation_id, subtype, payload }),
+  );
+  server.tool("xentient_play_audio",
+    "Play audio through the ESP32 speaker (base64 PCM s16le)",
+    { data: z.string(), format: z.literal("pcm_s16le") } as any,
+    async ({ data, format }: { data: string; format: "pcm_s16le" }) => h.xentient_play_audio({ data, format }),
+  );
+  server.tool("xentient_set_lcd",
+    "Set the LCD display text (2 lines)",
+    { line1: z.string().max(16), line2: z.string().max(16) } as any,
+    async ({ line1, line2 }: { line1: string; line2: string }) => h.xentient_set_lcd({ line1, line2 }),
+  );
+  server.tool("xentient_read_sensors", "Read current sensor values", {},
+    async () => h.xentient_read_sensors(),
+  );
+  server.tool("xentient_read_mode", "Read current Xentient mode", {},
+    async () => h.xentient_read_mode(),
+  );
+  server.tool("xentient_set_mode", "Set Xentient mode",
+    { mode: z.enum(["sleep", "listen", "active", "record"]) } as any,
+    async ({ mode }: { mode: string }) => h.xentient_set_mode({ mode: mode as any }),
+  );
+  server.tool("xentient_get_capabilities", "Return system capabilities",
+    { spaceId: z.string().optional() } as any,
+    async ({ spaceId }: { spaceId?: string }) => h.xentient_get_capabilities({ spaceId }),
+  );
+  server.tool("xentient_list_skills", "Query all CoreSkills",
+    { spaceId: z.string().optional() } as any,
+    async ({ spaceId }: { spaceId?: string }) => h.xentient_list_skills({ spaceId }),
+  );
+  server.tool("xentient_activate_config", "Activate a named configuration",
+    { spaceId: z.string(), config: z.string() } as any,
+    async ({ spaceId, config }: { spaceId: string; config: string }) => h.xentient_activate_config({ spaceId, config }),
+  );
+  server.tool("xentient_subscribe_events", "Subscribe to a filtered event stream",
+    { eventTypes: z.array(z.string()).min(1), maxRateMs: z.number().int().min(0).default(1000) } as any,
+    ({ eventTypes, maxRateMs }: { eventTypes: string[]; maxRateMs: number }) => h.xentient_subscribe_events({ eventTypes, maxRateMs }),
+  );
+
+  const sseBrainTracker = new Set<SSEServerTransport>();
+
+  const connectClient = (req: IncomingMessage, res: ServerResponse): void => {
+    const transport = new SSEServerTransport("/mcp", res);
+    server.connect(transport).then(() => {
+      sseBrainTracker.add(transport);
+      logger.info({ totalBrains: sseBrainTracker.size }, "SSE brain connected");
+    }).catch((err: Error) => logger.error({ err }, "SSE transport connect failed"));
+
+    req.on("close", () => {
+      sseBrainTracker.delete(transport);
+      logger.info({ totalBrains: sseBrainTracker.size }, "SSE brain disconnected");
+    });
+  };
+
+  return { sseBrainTracker, connectClient };
+}
+
+// Internal: registers all tools on a given McpServer instance.
+// Called by both startMcpServer (stdio) and createMcpSseServer (SSE).
+// NOTE: Currently unused — each McpServer calls createToolHandlers(deps) directly.
+// This stub is kept as a reference for future shared registration patterns.
+function _registerAllTools(_server: McpServer, _handlers: ReturnType<typeof createToolHandlers>): void {
+  // no-op stub — tool registration happens inline in startMcpServer / createMcpSseServer
 }

@@ -21,6 +21,7 @@ export interface BrainPipelineOptions {
   playAudio: (audio: Buffer) => Promise<void>;
   getMemoryContext: (userMessage: string) => Promise<MemoryContext>;
   onTurnComplete?: (userMessage: string, aiResponse: string) => Promise<void>;
+  onReasoningToken?: (token: string) => void;
 }
 
 export class BrainPipeline extends EventEmitter {
@@ -33,6 +34,7 @@ export class BrainPipeline extends EventEmitter {
 
   async processUtterance(audioBuffer: Buffer): Promise<void> {
     const { stt, llm, tts, playAudio } = this.opts;
+    const onReasoningToken = this.opts.onReasoningToken;
     const t0 = Date.now();
 
     // STT
@@ -61,6 +63,8 @@ export class BrainPipeline extends EventEmitter {
       for await (const token of stream) {
         if (!llmFirstTokenMs) llmFirstTokenMs = Date.now() - llmStart;
         fullResponse += token;
+        // Emit reasoning token to brain stream (F10: cannot use return value)
+        onReasoningToken?.(token);
         yield token;
       }
     }

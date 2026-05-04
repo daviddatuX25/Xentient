@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Xentient V1 — Solder Board Map v4</title>
+<title>Xentient V1 — Solder Board Map v5</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;500;700&display=swap');
 
@@ -248,7 +248,7 @@
 
 <header>
   <h1>Xentient V1 — Solder Board Map</h1>
-  <span>42 × 30 holes · 2.54 mm pitch · v4 — ESP32 DevKit (right half) + Battery (bottom-left) + I2C pull-ups — click any zone to trace wires</span>
+  <span>42 × 30 holes · 2.54 mm pitch · v5 — 10k Speaker Resistor + 5V LCD fix — click any zone to trace wires</span>
 </header>
 
 <div style="display:flex; flex-direction:column; gap:8px;">
@@ -426,15 +426,32 @@ const zones = [
       {dot:"#444441", label:"Pin 2 — GND",     dest:"← E3 cap− (GND path)"},
       {dot:"#378add", label:"Pin 3 — BCLK",   dest:"← GPIO26 (shared J1)"},
       {dot:"#378add", label:"Pin 4 — LRC",    dest:"← GPIO25 (shared J1)"},
-      {dot:"#7f77dd", label:"Pin 5 — DIN",    dest:"← GPIO27"},
+      {dot:"#7f77dd", label:"Pin 5 — DIN",    dest:"← R4 (from GPIO27)"},
       {dot:"#888780", label:"Pin 6 — GAIN",   dest:"NC — leave open (9 dB)"},
     ],
     wireRoutes:[
       {to:"ecap_amp", color:"#97c459", label:"VCC←E3 cap+", pinIdx:0, toPin:0},
       {to:"ecap_amp", color:"#444441", label:"GND←E3 cap−",  pinIdx:1, toPin:1},
-      {to:"esp32",color:"#7fc5e8", label:"BCLK+LRC+DIN→ESP32",pinIdx:2, toPin:6},
+      {to:"esp32",color:"#7fc5e8", label:"BCLK+LRC→ESP32",pinIdx:2, toPin:6},
+      {to:"r_amp",    color:"#7f77dd", label:"DIN←10k", pinIdx:4, toPin:0},
     ],
-    note:"Power flows THROUGH E3 cap: 5V rail→cap+→VCC, GND rail→cap−→GND."
+    note:"Power flows THROUGH E3 cap: 5V rail→cap+→VCC, GND rail→cap−→GND. DIN connected via 10k resistor to prevent crackling."
+  },
+
+  /* ── R4: 10k Resistor for Amp DIN ── */
+  {
+    id:"r_amp", label:"R4 — 10k Amp Resistor", tag:"Resistor", side:"back",
+    color:"#b5781e", textColor:"#fff", tagBg:"#3d2a0a", tagFg:"#d9a040",
+    col1:10, row1:14, col2:13, row2:15,
+    pinOffsets:[0.2, 0.8],
+    wires:[
+      {dot:"#7f77dd", label:"R4 left → J2 DIN", dest:"→ J2 Pin 5 (DIN)"},
+      {dot:"#85b7eb", label:"R4 right → GPIO27",dest:"→ GPIO27 ESP32"},
+    ],
+    wireRoutes:[
+      {to:"esp32",  color:"#85b7eb", label:"R4→GPIO27", pinIdx:1, toPin:7},
+    ],
+    note:"10kΩ series resistor on the DIN line to the MAX98357A. Solves speaker crackling and noise."
   },
 
   /* ── J3: BME280 ── */
@@ -466,17 +483,17 @@ const zones = [
     col1:0, row1:9, col2:6, row2:14,
     pinOffsets:[0.2, 0.4, 0.6, 0.8],
     wires:[
-      {dot:"#f0997b", label:"Pin 1 — VCC 3.3 V", dest:"← 3.3 V rail"},
+      {dot:"#e24b4a", label:"Pin 1 — VCC 5 V",   dest:"← 5 V rail"},
       {dot:"#444441", label:"Pin 2 — GND",       dest:"← GND rail"},
       {dot:"#85b7eb", label:"Pin 3 — SDA",       dest:"← GPIO21 I2C"},
       {dot:"#85b7eb", label:"Pin 4 — SCL",       dest:"← GPIO22 I2C"},
     ],
     wireRoutes:[
-      {toBus:"v33",   color:"#f0997b", label:"3V3",     pinIdx:0},
+      {toBus:"v5",    color:"#e24b4a", label:"5V",      pinIdx:0},
       {toBus:"gnd",   color:"#444441", label:"GND",     pinIdx:1, useBottom:false},
-      {to:"esp32",   color:"#85b7eb", label:"SDA/SCL→ESP32", pinIdx:2, toPin:3},
+      {to:"esp32",    color:"#85b7eb", label:"SDA/SCL→ESP32", pinIdx:2, toPin:3},
     ],
-    note:"I2C address 0x27 (PCF8574). Shares I2C bus with BME280. External 4.7kΩ pull-ups on R zone."
+    note:"I2C address 0x27 (PCF8574). Shares I2C bus with BME280. Powered from 5V for better contrast. Note: Ensure ESP32 GPIO21/22 tolerate the 5V pull-ups from LCD module."
   },
 
   /* ── R: I2C Pull-up Resistors ── */
@@ -533,7 +550,7 @@ const zones = [
       {dot:"#85b7eb", label:"GPIO22 (SCL)",   dest:"→ J3, LCD"},
       {dot:"#85b7eb", label:"GPIO25 (LRCK)",  dest:"→ J1 pin 4, J2 pin 4"},
       {dot:"#85b7eb", label:"GPIO26 (BCLK)",  dest:"→ J1 pin 3, J2 pin 3"},
-      {dot:"#85b7eb", label:"GPIO27 (DIN)",   dest:"→ J2 pin 5 (AMP)"},
+      {dot:"#85b7eb", label:"GPIO27 (DIN)",   dest:"→ R4 (10k) → J2"},
       {dot:"#85b7eb", label:"GPIO17 (U2TX)",   dest:"→ J5 CAM RX"},
       {dot:"#85b7eb", label:"GPIO16 (U2RX)",   dest:"← J5 CAM TX"},
     ],
@@ -544,7 +561,7 @@ const zones = [
       {to:"j3",     color:"#85b7eb", label:"SDA→BME",     pinIdx:3, toPin:2},
       {to:"lcd",    color:"#85b7eb", label:"SCL→LCD",     pinIdx:4, toPin:2},
       {to:"j1",     color:"#85b7eb", label:"BCLK+LRCK",    pinIdx:5, toPin:2},
-      {to:"j2",     color:"#7fc5e8", label:"BCLK+LRCK+DIN", pinIdx:6, toPin:2},
+      {to:"j2",     color:"#7fc5e8", label:"BCLK+LRCK", pinIdx:6, toPin:2},
     ],
     note:"ESP32 DevKit occupies full right half. USB faces board edge. PWR, I2C, I2S all provided on-board. No separate PWR strip, I2C/I2S headers, or 3-pin misc strips needed."
   },

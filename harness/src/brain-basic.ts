@@ -3,6 +3,7 @@ dotenv.config();
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import config from "../config/default.json";
 import { BrainPipeline } from "./brain-basic/Pipeline";
 import { DeepgramProvider } from "./providers/stt/DeepgramProvider";
@@ -61,24 +62,31 @@ let activeClient: Client | null = null;
 async function main() {
   logger.info("Starting Xentient Brain (basic-llm)...");
 
-  // Connect to Core's MCP server via stdio.
-  // In dev mode (running via ts-node-dev), __dirname points to src/ — we must
-  // spawn Core via ts-node (not ts-node-dev, to avoid double-respawn loops).
-  // In production (compiled JS), __dirname points to dist/ and we use node.
-  const isDev = !__dirname.includes("dist");
-  const corePath = resolve(__dirname, isDev ? "core.ts" : "core.js");
-  const transport = new StdioClientTransport(
-    isDev
-      ? {
-          command: "npx",
-          args: ["ts-node", "--transpile-only", corePath],
-          env: { ...process.env, FORCE_COLOR: "0" },
-        }
-      : {
-          command: process.execPath,
-          args: [corePath],
-        },
-  );
+  // Connect to Core's MCP server.
+  // When CORE_MCP_URL is set, use SSE transport (Core runs separately).
+  // When unset, spawn Core as a child process via stdio (legacy/dev mode).
+  let transport: SSEClientTransport | StdioClientTransport;
+  const coreMcpUrl = process.env.CORE_MCP_URL;
+  if (coreMcpUrl) {
+    logger.info({ coreMcpUrl }, "Using SSE transport — connecting to external Core");
+    transport = new SSEClientTransport(new URL(coreMcpUrl));
+  } else {
+    logger.info("CORE_MCP_URL not set — spawning Core via stdio (legacy mode)");
+    const isDev = !__dirname.includes("dist");
+    const corePath = resolve(__dirname, isDev ? "core.ts" : "core.js");
+    transport = new StdioClientTransport(
+      isDev
+        ? {
+            command: "npx",
+            args: ["ts-node", "--transpile-only", corePath],
+            env: { ...process.env, FORCE_COLOR: "0" },
+          }
+        : {
+            command: process.execPath,
+            args: [corePath],
+          },
+    );
+  }
 
   const client = new Client({ name: "brain-basic", version: "1.0.0" });
   await client.connect(transport);
@@ -105,23 +113,73 @@ async function main() {
     });
   };
 
+  // Track the current escalation ID so the onReasoningToken callback can reference it
+  let currentEscalationId: string | null = null;
+
   const getMemoryContext = async () => ({
     userProfile: "",
     relevantEpisodes: "",
     extractedFacts: "",
   });
 
-  const pipeline = new BrainPipeline({ stt, tts, llm, playAudio, getMemoryContext });
+  const pipeline = new BrainPipeline({
+    stt, tts, llm, playAudio, getMemoryContext,
+    onReasoningToken: (token: string) => {
+      if (!currentEscalationId) return;
+      client.callTool({
+        name: "xentient_brain_stream",
+        arguments: {
+          escalation_id: currentEscalationId,
+          subtype: "reasoning_token",
+          payload: { token },
+        },
+      }).catch((err: Error) => logger.error({ err }, "Failed to stream reasoning token"));
+    },
+  });
 
   // Subscribe to MCP events using fallbackNotificationHandler.
-  // Custom xentient events (motion_detected, voice_start, etc.) use method strings
-  // that aren't in the standard MCP spec, so the generic fallback handler catches all
-  // unhandled notifications. This is the correct SDK approach for custom protocols.
   client.fallbackNotificationHandler = async (notification) => {
     if (!notification.method || !notification.params) return;
     const params = notification.params as Record<string, unknown>;
 
     switch (notification.method) {
+      // ── New path: skill_escalated (via EventBridge → _voice-capture → supervisor)
+      case "xentient/skill_escalated": {
+        const { escalationId, event, context } = params as {
+          escalationId: string;
+          event: string;
+          context?: { audio?: string };
+        };
+        if (event !== "voice_command" || !context?.audio) break;
+
+        currentEscalationId = escalationId;
+        logger.info({ escalationId }, "Escalation received — processing voice command");
+
+        const audioBuffer = Buffer.from(context.audio, "base64");
+
+        // Signal received
+        await client.callTool({
+          name: "xentient_brain_stream",
+          arguments: { escalation_id: escalationId, subtype: "escalation_received", payload: { skillId: params.skillId } },
+        }).catch((err: Error) => logger.error({ err }, "Failed to signal escalation_received"));
+
+        // Run pipeline (tokens stream via onReasoningToken callback)
+        await pipeline.processUtterance(audioBuffer).catch((err: Error) =>
+          logger.error({ err }, "Pipeline processing error"));
+
+        // Signal complete — clears the 8s timeout in EscalationSupervisor
+        await client.callTool({
+          name: "xentient_brain_stream",
+          arguments: { escalation_id: escalationId, subtype: "escalation_complete", payload: {} },
+        }).catch((err: Error) => logger.error({ err }, "Failed to signal escalation_complete"));
+
+        currentEscalationId = null;
+        break;
+      }
+
+      // ── Legacy path: direct voice_end (kept as commented fallback — do not delete)
+      // case "xentient/voice_end": { ... }
+
       case "xentient/motion_detected":
         logger.info({ params }, "Motion detected — waking from sleep");
         client.callTool({ name: "xentient_set_mode", arguments: { mode: "listen" } }).catch((err: Error) =>
@@ -135,16 +193,14 @@ async function main() {
         break;
 
       case "xentient/voice_end": {
+        // Legacy direct voice_end path — still active if EventBridge routing is disabled
         const voiceParams = params as { audio?: string; timestamp: number; duration_ms: number };
-        logger.info({ duration_ms: voiceParams.duration_ms }, "Voice end — processing utterance");
-
+        logger.info({ duration_ms: voiceParams.duration_ms }, "[legacy] Voice end — processing utterance directly");
         if (voiceParams.audio) {
           const audioBuffer = Buffer.from(voiceParams.audio, "base64");
           pipeline.processUtterance(audioBuffer).catch((err: Error) =>
             logger.error({ err }, "Pipeline processing error"));
         }
-
-        // Return to listen mode after processing
         client.callTool({ name: "xentient_set_mode", arguments: { mode: "listen" } }).catch((err: Error) =>
           logger.error({ err }, "Failed to return to listen mode"));
         break;

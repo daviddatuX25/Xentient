@@ -104,7 +104,7 @@ export interface NodeSkill {
     vadThreshold?: number;
   };
   emits: string[];
-  expectedBy: string;        // paired CoreSkill
+  expectedBy?: string;        // paired CoreSkill
   compatibleConfigs: string[];
   modeTask?: {
     lcdFace?: number;

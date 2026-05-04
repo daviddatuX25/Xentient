@@ -2,7 +2,77 @@
   "pack": {
     "name": "default",
     "version": "1.0.0",
-    "description": "Default Xentient skill pack — placeholder for custom skills"
+    "description": "Default Xentient skill pack — ambient sensing + voice interaction"
   },
-  "skills": []
+  "configurations": [
+    {
+      "name": "ambient",
+      "displayName": "Ambient Sense",
+      "nodeAssignments": { "base": "ambient-sense" },
+      "coreSkills": ["env-logger", "motion-alert"]
+    },
+    {
+      "name": "voice-ready",
+      "displayName": "Voice Ready",
+      "nodeAssignments": { "base": "voice-listen" },
+      "coreSkills": ["env-logger", "motion-alert"]
+    }
+  ],
+  "nodeSkills": [
+    {
+      "id": "ambient-sense",
+      "name": "Ambient Sense",
+      "version": "1.0.0",
+      "requires": { "pir": true, "bme": true, "lcd": true },
+      "sampling": { "bmeIntervalMs": 5000, "pirDebounceMs": 1000, "micMode": 0, "cameraMode": 0 },
+      "emits": ["presence", "env"],
+      "expectedBy": "_sensor-telemetry",
+      "compatibleConfigs": ["ambient"]
+    },
+    {
+      "id": "voice-listen",
+      "name": "Voice Listen",
+      "version": "1.0.0",
+      "requires": { "pir": true, "mic": true, "bme": true, "lcd": true },
+      "sampling": { "micMode": 1, "audioRate": 16000, "vadThreshold": 0.3, "bmeIntervalMs": 5000, "pirDebounceMs": 1000, "cameraMode": 0 },
+      "emits": ["presence", "env", "vad", "audio_chunk"],
+      "expectedBy": "_voice-capture",
+      "compatibleConfigs": ["voice-ready"]
+    }
+  ],
+  "skills": [
+    {
+      "id": "env-logger",
+      "displayName": "Environment Logger",
+      "trigger": { "type": "interval", "everyMs": 60000 },
+      "actions": [
+        { "type": "log", "message": "Env snapshot: {{sensor.temperature}}C {{sensor.humidity}}%" }
+      ],
+      "priority": 10,
+      "cooldownMs": 0
+    },
+    {
+      "id": "motion-alert",
+      "displayName": "Motion Alert",
+      "trigger": { "type": "event", "event": "motion_detected" },
+      "actions": [
+        { "type": "set_lcd", "line1": "(!)", "line2": "motion" },
+        { "type": "increment_counter", "name": "motionCount" }
+      ],
+      "collect": [
+        { "type": "counter", "name": "motionCount", "resetAfterMs": 3600000 }
+      ],
+      "escalation": {
+        "conditions": [
+          { "field": "motionCount", "operator": ">=", "value": 10 }
+        ],
+        "event": "high_motion",
+        "contextBuilder": "counter_snapshot",
+        "priority": "normal",
+        "cooldownMs": 0
+      },
+      "priority": 50,
+      "cooldownMs": 3000
+    }
+  ]
 }

@@ -160,6 +160,119 @@ h1, h2, h3, h4, h5, h6 {
   background: hsl(160, 60%, 45%);
 }
 
+/* ── Node Function Pills ────────────────────────────────────────── */
+
+.node-fn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.node-fn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.node-fn.always-on {
+  background-color: rgba(34, 197, 94, 0.12);
+  color: hsl(160, 60%, 45%);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.node-fn.active {
+  background-color: rgba(59, 130, 246, 0.12);
+  color: hsl(217, 91%, 60%);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.node-fn.inactive {
+  background-color: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Brain Feed ─────────────────────────────────────────────────── */
+
+.brain-feed-card {
+  margin-top: 0;
+}
+
+.brain-feed-card .card-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.brain-feed-toggle-icon {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.brain-feed-body {
+  padding: 8px 0 0 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.brain-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+
+.brain-feed-empty {
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 8px 0;
+  font-size: 0.82rem;
+}
+
+.brain-token {
+  display: block;
+  color: #c0caf5;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.brain-tool-call {
+  color: #e5a445;
+  padding: 2px 0;
+}
+
+.brain-tool-call code {
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.brain-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin: 2px 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.brain-pill--blue  { background: rgba(59, 130, 246, 0.12); color: hsl(217, 91%, 60%); }
+.brain-pill--green { background: rgba(34, 197, 94, 0.12); color: hsl(160, 60%, 45%); }
+.brain-pill--red   { background: rgba(239, 68, 68, 0.12); color: hsl(0, 70%, 55%); }
+
 /* ── Navigation ───────────────────────────────────────────────── */
 
 #nav {

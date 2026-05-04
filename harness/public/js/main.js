@@ -6,7 +6,7 @@
  */
 import { DashboardAPI } from './api.js';
 import { DashboardSSE } from './sse.js';
-import { renderOverview, renderOverviewSkeleton } from './overview.js';
+import { renderOverview, renderOverviewSkeleton, toggleBrainFeed, appendBrainFeedEvent, renderBrainFeedContent } from './overview.js';
 import { renderSkills, flashSkillRow, refreshSkillList, refreshSkillPack } from './skills.js';
 import { renderTelemetry, handleSensorUpdate, handleSkillFired, handleSkillEscalated, handleSkillConflict, handleModeChange, reseedTelemetryData } from './telemetry.js';
 import { renderMode } from './mode.js';
@@ -21,6 +21,11 @@ export const state = {
   sensors: { temperature: null, humidity: null, pressure: null, motion: null, lastMotionAt: null },
   skills: [],
   activePack: null,
+  activeConfig: null,
+  nodeFunctions: null,
+  brainFeedEvents: [],
+  brainFeedExpanded: false,
+  currentStreamEscalationId: null,
   connected: false,
   activeTab: 'overview',
   config: null,
@@ -106,11 +111,13 @@ function onSSEEvent(event) {
       break;
     case 'pack_loaded':
       state.activePack = event.packName;
-      if (state.activeTab === 'overview') renderActivePanel();
+      refreshState(); // Re-fetch to get updated nodeFunctions + activeConfig
       if (state.activeTab === 'skills') refreshSkillPack();
       break;
     case 'pack_unloaded':
       state.activePack = null;
+      state.activeConfig = null;
+      state.nodeFunctions = { core: true, cam: false, mic: false, speaker: false, tempHumid: false, pir: false };
       if (state.activeTab === 'overview') renderActivePanel();
       if (state.activeTab === 'skills') refreshSkillPack();
       break;
@@ -128,6 +135,11 @@ function onSSEEvent(event) {
     case 'skill_conflict':
       if (state.activeTab === 'telemetry') handleSkillConflict(event);
       if (state.activeTab === 'overview') renderActivePanel();
+      break;
+    case 'brain_event':
+      if (state.activeTab === 'overview') {
+        appendBrainFeedEvent(event, state);
+      }
       break;
     default:
       // Unknown event types are ignored gracefully
@@ -165,6 +177,8 @@ async function refreshState() {
       state.mode = status.mode || state.mode;
       state.mqtt = status.mqtt ?? state.mqtt;
       state.brain = status.brain ?? state.brain;
+      state.activeConfig = status.activeConfig ?? state.activeConfig;
+      state.nodeFunctions = status.nodeFunctions ?? state.nodeFunctions;
       if (status.camera) state.camera = status.camera;
       updateModeBadge(state.mode);
       updatePageTitle(state.mode);
@@ -223,6 +237,8 @@ async function init() {
       state.mode = status.mode || 'sleep';
       state.mqtt = status.mqtt ?? false;
       state.brain = status.brain ?? false;
+      state.activeConfig = status.activeConfig ?? null;
+      state.nodeFunctions = status.nodeFunctions ?? null;
       if (status.camera) state.camera = status.camera;
     }
     if (sensors) {
@@ -250,6 +266,9 @@ async function init() {
 
     // Connect SSE for real-time updates
     sse.connect(onSSEEvent, onSSEDisconnect, onSSEReconnect);
+
+    // Wire brain feed toggle (overview.js sets onclick via window global)
+    window._toggleBrainFeed = () => toggleBrainFeed(state);
   } catch (err) {
     showToast('Failed to initialize dashboard', 'error');
     console.error('Dashboard init error:', err);

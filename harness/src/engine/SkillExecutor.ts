@@ -15,6 +15,7 @@ import { SkillLog } from './SkillLog';
 import { buildContext, SensorSnapshot } from './contextBuilders';
 import { ALL_BUILTINS } from './builtins';
 import type { SkillPersistence } from './SkillPersistence';
+import type { EscalationSupervisor } from './EscalationSupervisor';
 
 const logger = pino({ name: 'skill-executor' }, process.stderr);
 
@@ -30,6 +31,8 @@ export interface SkillExecutorOptions {
   onObservabilityEvent: (event: ObservabilityEvent) => void;
   persistence?: SkillPersistence;
   getBrainConnected?: () => boolean;
+  supervisor?: EscalationSupervisor;
+  fallbackFn?: () => void;
 }
 
 export class SkillExecutor extends EventEmitter {
@@ -392,16 +395,38 @@ export class SkillExecutor extends EventEmitter {
     };
     this.opts.onObservabilityEvent(event);
 
-    this.opts.mcpServer.server.notification({
-      method: SKILL_EVENTS.SKILL_ESCALATED,
-      params: {
-        skillId: skill.id,
-        spaceId: this.opts.spaceId,
-        event: skill.escalation!.event,
-        context,
-        priority: skill.escalation!.priority,
-      },
-    } as any).catch((err: Error) => logger.error({ err, skillId: skill.id }, 'Failed to send skill_escalated notification'));
+    if (this.opts.supervisor) {
+      this.opts.supervisor.fire(
+        skill.id,
+        (escalationId) => {
+          this.opts.mcpServer.server.notification({
+            method: SKILL_EVENTS.SKILL_ESCALATED,
+            params: {
+              escalationId,
+              skillId: skill.id,
+              spaceId: this.opts.spaceId,
+              event: skill.escalation!.event,
+              context: { ...context, escalationId },
+              priority: skill.escalation!.priority,
+            },
+          } as any).catch((err: Error) => logger.error({ err, skillId: skill.id }, 'Failed to send skill_escalated notification'));
+        },
+        () => {
+          if (this.opts.fallbackFn) this.opts.fallbackFn();
+        }
+      );
+    } else {
+      this.opts.mcpServer.server.notification({
+        method: SKILL_EVENTS.SKILL_ESCALATED,
+        params: {
+          skillId: skill.id,
+          spaceId: this.opts.spaceId,
+          event: skill.escalation!.event,
+          context,
+          priority: skill.escalation!.priority,
+        },
+      } as any).catch((err: Error) => logger.error({ err, skillId: skill.id }, 'Failed to send skill_escalated notification'));
+    }
 
     logger.info({ skillId: skill.id, spaceId: this.opts.spaceId }, 'Skill escalated to Brain');
   }

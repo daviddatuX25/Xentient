@@ -55,4 +55,27 @@ export const DETERMINE_SKILL: CoreSkill = {
   escalationCount: 0,
 };
 
-export const ALL_BUILTINS: CoreSkill[] = [PIR_WAKE, SENSOR_TELEMETRY, DETERMINE_SKILL];
+/** Voice capture — VAD-end → listen face + escalate to Brain with audio */
+export const VOICE_CAPTURE: CoreSkill = {
+  id: '_voice-capture',
+  displayName: 'Voice Capture',
+  enabled: true,
+  spaceId: '*',
+  configFilter: '*',
+  trigger: { type: 'event', event: 'voice_end' },
+  priority: 10,
+  actions: [{ type: 'set_lcd', line1: '(O_O)', line2: 'listening' }],
+  escalation: {
+    conditions: [{ field: 'always', operator: '>=', value: 0 }],
+    event: 'voice_command',
+    contextBuilder: 'full-context',
+    priority: 'normal',
+    cooldownMs: 0,
+  },
+  source: 'builtin',
+  cooldownMs: 3000,  // prevents re-fire while escalation timer runs
+  fireCount: 0,
+  escalationCount: 0,
+};
+
+export const ALL_BUILTINS: CoreSkill[] = [PIR_WAKE, SENSOR_TELEMETRY, DETERMINE_SKILL, VOICE_CAPTURE];

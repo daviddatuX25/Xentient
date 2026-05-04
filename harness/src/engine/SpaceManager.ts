@@ -11,6 +11,7 @@ import { PackLoader } from './PackLoader';
 import { TransitionQueue } from './TransitionQueue';
 import { toNodeProfile, DEFAULT_NODE_PROFILE } from './nodeProfileCompiler';
 import type { SkillPersistence } from './SkillPersistence';
+import type { EscalationSupervisor } from './EscalationSupervisor';
 
 const logger = pino({ name: 'space-manager' }, process.stderr);
 
@@ -24,6 +25,8 @@ export class SpaceManager extends EventEmitter {
   readonly transitionQueue: TransitionQueue;
   private packLoader?: PackLoader;
   private pendingAcks = new Map<string, { nodeId: string; timeout: ReturnType<typeof setTimeout> }>();
+  private supervisor?: EscalationSupervisor;
+  private fallbackFn?: () => void;
 
   constructor(
     private mcpServer: McpServer,
@@ -47,6 +50,11 @@ export class SpaceManager extends EventEmitter {
     this.packLoader = packLoader;
   }
 
+  setEscalation(supervisor: EscalationSupervisor, fallbackFn: () => void): void {
+    this.supervisor = supervisor;
+    this.fallbackFn = fallbackFn;
+  }
+
   /** Create or replace a Space and start its executor */
   addSpace(space: Space): void {
     const existing = this.executors.get(space.id);
@@ -67,6 +75,8 @@ export class SpaceManager extends EventEmitter {
       onObservabilityEvent: (event) => this.broadcastObservabilityEvent(event),
       persistence: this.persistence,
       getBrainConnected: () => true,  // v1: stdio transport is always connected while process runs
+      supervisor: this.supervisor,
+      fallbackFn: this.fallbackFn,
     });
 
     // Wire LCD/chime emission from executor to MCP notifications
@@ -317,6 +327,51 @@ export class SpaceManager extends EventEmitter {
   }
 
   /**
+   * Push the NodeProfile for the active config to a specific node.
+   * Falls back to default profile if no pack/config/nodeSkill matches.
+   * Returns true if a config-specific profile was pushed, false if default was used.
+   */
+  pushProfileForActiveConfig(node: { nodeId: string } & SpaceNode, spaceId: string): boolean {
+    if (!this.packLoader) {
+      this.pushDefaultProfile(node);
+      return false;
+    }
+    const manifest = this.packLoader.getLoadedPackManifest();
+    const space = this.spaces.get(spaceId);
+    const configName = space?.activeConfig;
+    if (!manifest || !configName) {
+      this.pushDefaultProfile(node);
+      return false;
+    }
+    const config = manifest.configurations.find(c => c.name === configName);
+    if (!config) {
+      this.pushDefaultProfile(node);
+      return false;
+    }
+    const nodeSkillId = config.nodeAssignments[node.role];
+    if (!nodeSkillId) {
+      this.pushDefaultProfile(node);
+      return false;
+    }
+    const nodeSkill = manifest.nodeSkills.find(ns => ns.id === nodeSkillId);
+    if (!nodeSkill) {
+      this.pushDefaultProfile(node);
+      return false;
+    }
+    const profile = toNodeProfile(nodeSkill, node);
+    if (!profile) {
+      this.pushDefaultProfile(node);
+      return false;
+    }
+    this.mqttClient.publish(
+      `xentient/node/${node.nodeId}/profile/set`,
+      { v: 1, type: 'node_profile_set', ...profile },
+    );
+    logger.info({ nodeId: node.nodeId, configName, profileId: nodeSkill.id }, 'Config-specific NodeProfile pushed');
+    return true;
+  }
+
+  /**
    * Process one queued transition. Called after each heartbeat tick cycle.
    * Returns true if a transition was processed, false if queue was empty.
    */
@@ -391,7 +446,7 @@ export class SpaceManager extends EventEmitter {
           node.state = 'running';
           node.lastSeen = Date.now();
           logger.info({ nodeId }, 'Node birth received — transitioning to running');
-          this.pushDefaultProfile(node);
+          this.pushProfileForActiveConfig(node, sid);
         }
         break;
       }
@@ -467,6 +522,9 @@ export class SpaceManager extends EventEmitter {
 
   /** Close an escalation (called by brain stream on escalation_complete) */
   closeEscalation(escalationId: string): void {
+    if (this.supervisor) {
+      this.supervisor.resolve(escalationId);
+    }
     logger.info({ escalationId }, "Escalation closed (brain stream)");
   }
 
